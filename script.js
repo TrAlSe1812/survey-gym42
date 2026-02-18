@@ -8,15 +8,7 @@ class SurveyApp {
         this.editingSurveyId = null;
         this.currentFilter = 'all';
         this.exportSurveyId = null;
-        
-        // Пробуем разные варианты API URL
-        this.apiUrls = [
-            'https://api.gym42.ru',
-            'https://gym42.ru/api',
-            'http://api.gym42.ru',
-            'http://gym42.ru/api'
-        ];
-        this.currentApiUrl = this.apiUrls[0];
+        this.useDemoMode = false; // Переключатель для демо-режима
         
         this.initializeEventListeners();
         this.checkAuth();
@@ -51,6 +43,9 @@ class SurveyApp {
         document.getElementById('filter-all').addEventListener('click', () => this.setFilter('all'));
         document.getElementById('filter-active').addEventListener('click', () => this.setFilter('active'));
         document.getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
+
+        // Переключение режима (для отладки)
+        document.getElementById('toggle-demo-mode')?.addEventListener('click', () => this.toggleDemoMode());
 
         // Динамические обработчики
         document.addEventListener('click', (e) => {
@@ -117,6 +112,17 @@ class SurveyApp {
         });
     }
 
+    // Переключение демо-режима
+    toggleDemoMode() {
+        this.useDemoMode = !this.useDemoMode;
+        this.showNotification(`Демо-режим ${this.useDemoMode ? 'включен' : 'выключен'}`, 'info');
+        
+        const demoBtn = document.getElementById('toggle-demo-mode');
+        if (demoBtn) {
+            demoBtn.textContent = this.useDemoMode ? '🔴 Демо-режим' : '🟢 Реальный режим';
+        }
+    }
+
     // Переключение dropdown меню
     toggleDropdown(button) {
         const menu = button.nextElementSibling;
@@ -133,110 +139,63 @@ class SurveyApp {
 
     // Проверка авторизации
     async checkAuth() {
-        // Проверяем, есть ли сохраненные данные пользователя
         const savedUser = localStorage.getItem('currentUser');
         
         if (savedUser) {
             this.currentUser = JSON.parse(savedUser);
             
-            // Пробуем проверить сессию на сервере
+            // Пробуем проверить сессию на сервере через JSONP
             try {
                 this.showScreen('loading-screen');
+                const isValid = await this.checkSessionWithJSONP();
                 
-                // Пробуем разные URL для API
-                for (const apiUrl of this.apiUrls) {
-                    try {
-                        const response = await this.fetchWithProxy(`${apiUrl}/login/`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: {
-                                'Accept': 'application/json'
-                            }
-                        });
-
-                        if (response && response.ok) {
-                            const userData = await response.json();
-                            this.currentUser = {
-                                ...this.currentUser,
-                                ...userData
-                            };
-                            localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                            this.showUserPanel();
-                            return;
-                        }
-                    } catch (e) {
-                        console.log(`Не удалось подключиться к ${apiUrl}:`, e);
-                    }
+                if (isValid) {
+                    this.showUserPanel();
+                } else {
+                    localStorage.removeItem('currentUser');
+                    this.currentUser = null;
+                    this.showScreen('login-screen');
                 }
-                
-                // Если ни один URL не сработал, показываем экран входа
-                localStorage.removeItem('currentUser');
-                this.currentUser = null;
-                this.showScreen('login-screen');
-                
             } catch (error) {
                 console.error('Ошибка проверки сессии:', error);
-                localStorage.removeItem('currentUser');
-                this.currentUser = null;
-                this.showScreen('login-screen');
+                // Если не удалось проверить, используем сохраненные данные
+                this.showUserPanel();
             }
         } else {
             this.showScreen('login-screen');
         }
     }
 
-    // Функция для обхода CORS с использованием прокси
-    async fetchWithProxy(url, options = {}) {
-        // Список CORS-прокси для попытки
-        const proxies = [
-            null, // Прямое соединение
-            'https://cors-anywhere.herokuapp.com/',
-            'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.io/?'
-        ];
+    // Проверка сессии через JSONP
+    checkSessionWithJSONP() {
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            const callbackName = 'jsonp_callback_' + Date.now();
+            
+            window[callbackName] = (data) => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(true);
+            };
 
-        for (const proxy of proxies) {
-            try {
-                const fetchUrl = proxy ? proxy + encodeURIComponent(url) : url;
-                
-                // Добавляем специальные заголовки для CORS
-                const fetchOptions = {
-                    ...options,
-                    mode: proxy ? 'cors' : 'no-cors',
-                    headers: {
-                        ...options.headers,
-                        'Origin': window.location.origin,
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                };
-
-                // Убираем credentials для прокси
-                if (proxy) {
-                    delete fetchOptions.credentials;
+            script.src = `https://api.gym42.ru/login/?callback=${callbackName}`;
+            script.onerror = () => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(false);
+            };
+            
+            document.body.appendChild(script);
+            
+            // Таймаут на случай если сервер не отвечает
+            setTimeout(() => {
+                if (window[callbackName]) {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    resolve(false);
                 }
-
-                console.log(`Пробуем подключиться через ${proxy || 'прямое соединение'}:`, fetchUrl);
-                
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000); // Таймаут 5 секунд
-                
-                const response = await fetch(fetchUrl, {
-                    ...fetchOptions,
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (response.ok) {
-                    console.log(`Успешное подключение через ${proxy || 'прямое соединение'}`);
-                    return response;
-                }
-            } catch (e) {
-                console.log(`Ошибка через ${proxy || 'прямое соединение'}:`, e.message);
-            }
-        }
-        
-        throw new Error('Не удалось подключиться к серверу ни через один из способов');
+            }, 5000);
+        });
     }
 
     // Обработка входа
@@ -254,7 +213,6 @@ class SurveyApp {
             return;
         }
 
-        // Блокируем кнопку и показываем спиннер
         loginButton.disabled = true;
         loginButton.innerHTML = `
             <span>Вход...</span>
@@ -263,102 +221,133 @@ class SurveyApp {
         loginError.style.display = 'none';
 
         try {
-            // Пробуем авторизоваться через разные URL
-            let loginSuccess = false;
+            // Пробуем авторизоваться через JSONP
+            const success = await this.loginWithJSONP(username, password);
             
-            for (const apiUrl of this.apiUrls) {
-                try {
-                    console.log('Попытка авторизации на:', apiUrl);
+            if (success) {
+                // Получаем данные пользователя
+                const userData = await this.getUserDataWithJSONP();
+                
+                if (userData) {
+                    const role = userData.tarif === 'Администратор' || userData.group === 'Администраторы' ? 'admin' : 'student';
                     
-                    // Используем прокси для обхода CORS
-                    const response = await this.fetchWithProxy(`${apiUrl}/login/`, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            login: username,
-                            password: password
-                        })
-                    });
+                    this.currentUser = {
+                        login: userData.login || username,
+                        fullname: userData.fullname || username,
+                        f: userData.f || '',
+                        i: userData.i || '',
+                        o: userData.o || '',
+                        userid: userData.userid || Date.now(),
+                        group: userData.group || (role === 'admin' ? 'Администраторы' : 'Ученики'),
+                        groupid: userData.groupid || (role === 'admin' ? 1 : 2),
+                        tarif: userData.tarif || (role === 'admin' ? 'Администратор' : 'Ученический'),
+                        tarifid: userData.tarifid || (role === 'admin' ? 1 : 2),
+                        date_begin: userData.date_begin || new Date().toISOString(),
+                        date_end: userData.date_end || new Date('2030-12-31').toISOString(),
+                        role: role
+                    };
 
-                    if (response) {
-                        const responseText = await response.text();
-                        console.log(`Ответ от ${apiUrl}:`, response.status, responseText);
-
-                        if (response.ok && (responseText === 'OK' || responseText.includes('OK'))) {
-                            loginSuccess = true;
-                            this.currentApiUrl = apiUrl;
-                            
-                            // Получаем данные пользователя
-                            await this.getUserData();
-                            break;
-                        }
-                    }
-                } catch (e) {
-                    console.log(`Ошибка авторизации на ${apiUrl}:`, e);
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                    
+                    this.showScreen('loading-screen');
+                    setTimeout(() => {
+                        this.showUserPanel();
+                    }, 500);
+                } else {
+                    // Если не удалось получить данные, создаем базового пользователя
+                    this.currentUser = {
+                        login: username,
+                        fullname: username,
+                        role: 'student'
+                    };
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                    this.showUserPanel();
+                }
+            } else {
+                // Если JSONP не работает, используем демо-режим
+                if (this.useDemoMode || confirm('Не удалось подключиться к серверу. Использовать демо-режим?')) {
+                    this.useDemoMode = true;
+                    this.currentUser = {
+                        login: username,
+                        fullname: username,
+                        role: username === 'admin' ? 'admin' : 'student'
+                    };
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                    this.showUserPanel();
+                } else {
+                    loginError.textContent = 'Неверный логин или пароль';
+                    loginError.style.display = 'block';
                 }
             }
-
-            if (loginSuccess) {
-                this.showUserPanel();
-            } else {
-                loginError.textContent = 'Неверный логин или пароль';
-                loginError.style.display = 'block';
-                this.resetLoginButton();
-            }
-
         } catch (error) {
             console.error('Ошибка авторизации:', error);
-            loginError.textContent = 'Ошибка подключения к серверу. Проверьте интернет-соединение.';
+            loginError.textContent = 'Ошибка подключения к серверу. Попробуйте позже.';
             loginError.style.display = 'block';
+        } finally {
             this.resetLoginButton();
         }
     }
 
-    // Получение данных пользователя
-    async getUserData() {
-        try {
-            const response = await this.fetchWithProxy(`${this.currentApiUrl}/login/`, {
-                method: 'GET',
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json'
+    // Авторизация через JSONP
+    loginWithJSONP(username, password) {
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            const callbackName = 'login_callback_' + Date.now();
+            
+            window[callbackName] = (data) => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(true);
+            };
+
+            script.src = `https://api.gym42.ru/login/?login=${username}&password=${password}&callback=${callbackName}`;
+            script.onerror = () => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(false);
+            };
+            
+            document.body.appendChild(script);
+            
+            setTimeout(() => {
+                if (window[callbackName]) {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    resolve(false);
                 }
-            });
+            }, 5000);
+        });
+    }
 
-            if (response && response.ok) {
-                const userData = await response.json();
-                console.log('Данные пользователя:', userData);
-                
-                // Определяем роль на основе тарифа или группы
-                const role = userData.tarif === 'Администратор' || userData.group === 'Администраторы' ? 'admin' : 'student';
-                
-                this.currentUser = {
-                    login: userData.login,
-                    fullname: userData.fullname,
-                    f: userData.f,
-                    i: userData.i,
-                    o: userData.o,
-                    userid: userData.userid,
-                    group: userData.group,
-                    groupid: userData.groupid,
-                    tarif: userData.tarif,
-                    tarifid: userData.tarifid,
-                    date_begin: userData.date_begin,
-                    date_end: userData.date_end,
-                    role: role
-                };
+    // Получение данных пользователя через JSONP
+    getUserDataWithJSONP() {
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            const callbackName = 'userdata_callback_' + Date.now();
+            
+            window[callbackName] = (data) => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(data);
+            };
 
-                localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                return true;
-            }
-        } catch (error) {
-            console.error('Ошибка получения данных пользователя:', error);
-        }
-        return false;
+            script.src = `https://api.gym42.ru/login/?callback=${callbackName}`;
+            script.onerror = () => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(null);
+            };
+            
+            document.body.appendChild(script);
+            
+            setTimeout(() => {
+                if (window[callbackName]) {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    resolve(null);
+                }
+            }, 5000);
+        });
     }
 
     // Сброс кнопки входа
@@ -372,24 +361,13 @@ class SurveyApp {
     }
 
     // Выход из системы
-    async handleLogout() {
+    handleLogout() {
         this.currentUser = null;
         localStorage.removeItem('currentUser');
         
-        // Очищаем cookie
         document.cookie.split(";").forEach(function(c) { 
             document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
         });
-        
-        // Пробуем выйти на сервере
-        try {
-            await this.fetchWithProxy(`${this.currentApiUrl}/login/`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-        } catch (error) {
-            console.error('Ошибка при выходе:', error);
-        }
         
         this.showScreen('login-screen');
         document.getElementById('user-info').style.display = 'none';
@@ -400,14 +378,11 @@ class SurveyApp {
     // Показать соответствующую панель пользователя
     showUserPanel() {
         document.getElementById('user-name').textContent = this.currentUser.fullname || this.currentUser.login;
-        document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.group === 'Ученики' ? 'Ученик' : this.currentUser.group);
+        document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.role === 'admin' ? 'Администратор' : 'Ученик');
         document.getElementById('user-group').textContent = this.currentUser.group || '';
         document.getElementById('user-info').style.display = 'flex';
         
-        // Определяем роль на основе тарифа
-        const isAdmin = this.currentUser.tarif === 'Администратор' || this.currentUser.group === 'Администраторы';
-        
-        if (isAdmin) {
+        if (this.currentUser.role === 'admin') {
             this.showScreen('admin-panel');
             this.loadAdminSurveys();
             this.updateStats();
@@ -442,7 +417,6 @@ class SurveyApp {
     setFilter(filter) {
         this.currentFilter = filter;
         
-        // Обновление активной кнопки
         document.querySelectorAll('.filter-btn').forEach(btn => {
             btn.classList.remove('active');
         });
@@ -469,12 +443,10 @@ class SurveyApp {
         document.getElementById('modal-title').textContent = 'Редактировать анкету';
         document.getElementById('survey-modal').style.display = 'block';
         
-        // Заполнение данных анкеты
         document.getElementById('survey-title').value = survey.title;
         document.getElementById('survey-description').value = survey.description || '';
         document.getElementById('survey-status').value = survey.isActive.toString();
         
-        // Очистка и заполнение вопросов
         document.getElementById('questions-container').innerHTML = '';
         survey.questions.forEach((question, index) => {
             this.addQuestion(question);
@@ -513,7 +485,6 @@ class SurveyApp {
                 const optionsContainer = questionCard.querySelector('.options-container');
                 optionsContainer.style.display = 'block';
                 
-                // Устанавливаем настройку исчезающих вариантов
                 if (questionData.disappearingOptions) {
                     optionsContainer.querySelector('.disappearing-options').checked = true;
                 }
@@ -552,7 +523,6 @@ class SurveyApp {
             optionInput.value = value;
         }
         
-        // Показываем статус варианта если включены исчезающие варианты
         const disappearingEnabled = container.querySelector('.disappearing-options').checked;
         if (disappearingEnabled) {
             optionStatus.style.display = 'flex';
@@ -566,7 +536,6 @@ class SurveyApp {
         const optionsContainer = selectElement.closest('.question-card').querySelector('.options-container');
         if (selectElement.value === 'radio' || selectElement.value === 'checkbox') {
             optionsContainer.style.display = 'block';
-            // Добавляем один вариант по умолчанию если их нет
             if (optionsContainer.querySelectorAll('.option-item').length === 0) {
                 this.addOption(optionsContainer);
             }
@@ -575,7 +544,7 @@ class SurveyApp {
         }
     }
 
-    // Сохранение анкеты (создание или редактирование)
+    // Сохранение анкеты
     handleSaveSurvey(e) {
         e.preventDefault();
         
@@ -614,7 +583,6 @@ class SurveyApp {
         });
 
         if (this.editingSurveyId) {
-            // Редактирование существующей анкеты
             const surveyIndex = this.surveys.findIndex(s => s.id === this.editingSurveyId);
             this.surveys[surveyIndex] = {
                 ...this.surveys[surveyIndex],
@@ -624,7 +592,6 @@ class SurveyApp {
                 isActive
             };
         } else {
-            // Создание новой анкеты
             const survey = {
                 id: Date.now(),
                 title: title,
@@ -659,7 +626,6 @@ class SurveyApp {
         
         let adminSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login);
         
-        // Применение фильтра
         if (this.currentFilter === 'active') {
             adminSurveys = adminSurveys.filter(s => s.isActive);
         } else if (this.currentFilter === 'inactive') {
@@ -676,7 +642,6 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = responsesCount;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
-            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (survey.isActive) {
                 statusBadge.classList.add('active');
@@ -713,7 +678,6 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = this.responses.filter(r => r.surveyId === survey.id).length;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
-            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (hasResponded) {
                 statusBadge.classList.add('inactive');
@@ -723,10 +687,8 @@ class SurveyApp {
                 statusBadge.title = 'Доступна';
             }
             
-            // Убираем dropdown меню для учеников
             card.querySelector('.survey-actions-dropdown').remove();
             
-            // Добавляем кнопку для прохождения анкеты
             if (!hasResponded) {
                 const takeSurveyBtn = document.createElement('button');
                 takeSurveyBtn.className = 'btn-primary';
@@ -768,7 +730,6 @@ class SurveyApp {
         navigator.clipboard.writeText(surveyLink).then(() => {
             this.showNotification('Ссылка скопирована в буфер обмена!', 'success');
         }).catch(() => {
-            // Fallback для старых браузеров
             const textarea = document.createElement('textarea');
             textarea.value = surveyLink;
             document.body.appendChild(textarea);
@@ -898,7 +859,6 @@ class SurveyApp {
         
         resultsHTML += `</tbody></table></div>`;
         
-        // Добавляем скрытую карточку для экспорта
         resultsHTML += `
             <div class="survey-card" data-survey-id="${surveyId}" style="display: none;">
                 ${survey.title}
@@ -1188,29 +1148,6 @@ class SurveyApp {
         `;
         
         document.getElementById('survey-content').innerHTML = surveyHTML;
-        
-        const style = document.createElement('style');
-        style.textContent = `
-            .remaining-badge {
-                font-size: 0.75rem;
-                padding: 0.25rem 0.5rem;
-                border-radius: 12px;
-                background: var(--light);
-                color: var(--gray);
-                margin-left: auto;
-            }
-            
-            .option-label.disabled .remaining-badge {
-                background: var(--danger);
-                color: white;
-            }
-            
-            .option-label:not(.disabled) .remaining-badge {
-                background: var(--success);
-                color: white;
-            }
-        `;
-        document.head.appendChild(style);
         
         document.getElementById('take-survey-form').addEventListener('submit', (e) => this.handleSurveySubmit(e, surveyId));
         this.showScreen('survey-screen');
