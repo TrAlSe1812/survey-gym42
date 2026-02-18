@@ -9,9 +9,14 @@ class SurveyApp {
         this.currentFilter = 'all';
         this.exportSurveyId = null;
         
-        // Используем CORS-прокси для обхода ограничений
-        this.apiBaseUrl = 'https://api.gym42.ru';
-        this.proxyUrl = 'https://cors-anywhere.herokuapp.com/'; // Публичный CORS-прокси
+        // Пробуем разные варианты API URL
+        this.apiUrls = [
+            'https://api.gym42.ru',
+            'https://gym42.ru/api',
+            'http://api.gym42.ru',
+            'http://gym42.ru/api'
+        ];
+        this.currentApiUrl = this.apiUrls[0];
         
         this.initializeEventListeners();
         this.checkAuth();
@@ -138,33 +143,39 @@ class SurveyApp {
             try {
                 this.showScreen('loading-screen');
                 
-                // Пробуем сначала без прокси
-                const response = await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
+                // Пробуем разные URL для API
+                for (const apiUrl of this.apiUrls) {
+                    try {
+                        const response = await this.fetchWithProxy(`${apiUrl}/login/`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
 
-                if (response && response.ok) {
-                    const userData = await response.json();
-                    // Обновляем данные пользователя
-                    this.currentUser = {
-                        ...this.currentUser,
-                        ...userData
-                    };
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                    this.showUserPanel();
-                } else {
-                    // Если сессия недействительна, показываем экран входа
-                    localStorage.removeItem('currentUser');
-                    this.currentUser = null;
-                    this.showScreen('login-screen');
+                        if (response && response.ok) {
+                            const userData = await response.json();
+                            this.currentUser = {
+                                ...this.currentUser,
+                                ...userData
+                            };
+                            localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                            this.showUserPanel();
+                            return;
+                        }
+                    } catch (e) {
+                        console.log(`Не удалось подключиться к ${apiUrl}:`, e);
+                    }
                 }
+                
+                // Если ни один URL не сработал, показываем экран входа
+                localStorage.removeItem('currentUser');
+                this.currentUser = null;
+                this.showScreen('login-screen');
+                
             } catch (error) {
                 console.error('Ошибка проверки сессии:', error);
-                // При ошибке сети показываем экран входа
                 localStorage.removeItem('currentUser');
                 this.currentUser = null;
                 this.showScreen('login-screen');
@@ -174,61 +185,58 @@ class SurveyApp {
         }
     }
 
-    // Универсальная функция для запросов с поддержкой прокси
+    // Функция для обхода CORS с использованием прокси
     async fetchWithProxy(url, options = {}) {
-        const controllers = [];
-        
-        // Пробуем разные варианты запросов
-        const strategies = [
-            // 1. Прямой запрос
-            async () => {
-                const controller = new AbortController();
-                controllers.push(controller);
-                return await fetch(url, {
-                    ...options,
-                    signal: controller.signal
-                });
-            },
-            
-            // 2. Запрос через CORS-прокси
-            async () => {
-                const controller = new AbortController();
-                controllers.push(controller);
-                return await fetch(this.proxyUrl + url, {
-                    ...options,
-                    signal: controller.signal
-                });
-            },
-            
-            // 3. Запрос с режимом no-cors
-            async () => {
-                const controller = new AbortController();
-                controllers.push(controller);
-                return await fetch(url, {
-                    ...options,
-                    mode: 'no-cors',
-                    signal: controller.signal
-                });
-            }
+        // Список CORS-прокси для попытки
+        const proxies = [
+            null, // Прямое соединение
+            'https://cors-anywhere.herokuapp.com/',
+            'https://api.allorigins.win/raw?url=',
+            'https://corsproxy.io/?'
         ];
 
-        // Пробуем каждую стратегию по очереди
-        for (const strategy of strategies) {
+        for (const proxy of proxies) {
             try {
-                console.log('Пробуем стратегию:', strategy.toString().substring(0, 100));
-                const response = await strategy();
+                const fetchUrl = proxy ? proxy + encodeURIComponent(url) : url;
                 
-                // Отменяем остальные запросы
-                controllers.forEach(c => c.abort());
+                // Добавляем специальные заголовки для CORS
+                const fetchOptions = {
+                    ...options,
+                    mode: proxy ? 'cors' : 'no-cors',
+                    headers: {
+                        ...options.headers,
+                        'Origin': window.location.origin,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                };
+
+                // Убираем credentials для прокси
+                if (proxy) {
+                    delete fetchOptions.credentials;
+                }
+
+                console.log(`Пробуем подключиться через ${proxy || 'прямое соединение'}:`, fetchUrl);
                 
-                return response;
-            } catch (error) {
-                console.log('Стратегия не сработала:', error.message);
-                // Продолжаем со следующей стратегией
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // Таймаут 5 секунд
+                
+                const response = await fetch(fetchUrl, {
+                    ...fetchOptions,
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    console.log(`Успешное подключение через ${proxy || 'прямое соединение'}`);
+                    return response;
+                }
+            } catch (e) {
+                console.log(`Ошибка через ${proxy || 'прямое соединение'}:`, e.message);
             }
         }
-
-        throw new Error('Все способы подключения не сработали');
+        
+        throw new Error('Не удалось подключиться к серверу ни через один из способов');
     }
 
     // Обработка входа
@@ -255,153 +263,65 @@ class SurveyApp {
         loginError.style.display = 'none';
 
         try {
-            console.log('Попытка входа с логином:', username);
+            // Пробуем авторизоваться через разные URL
+            let loginSuccess = false;
             
-            // Пробуем разные способы авторизации
-            let response = null;
-            let error = null;
-            
-            // Способ 1: Прямой POST запрос
-            try {
-                response = await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        login: username,
-                        password: password
-                    })
-                });
-                
-                console.log('Ответ от сервера:', response);
-                
-                if (response && response.ok) {
-                    const responseText = await response.text();
-                    console.log('Текст ответа:', responseText);
+            for (const apiUrl of this.apiUrls) {
+                try {
+                    console.log('Попытка авторизации на:', apiUrl);
                     
-                    if (responseText === 'OK') {
-                        // Успешный вход
-                        await this.getUserData();
-                        return;
+                    // Используем прокси для обхода CORS
+                    const response = await this.fetchWithProxy(`${apiUrl}/login/`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            login: username,
+                            password: password
+                        })
+                    });
+
+                    if (response) {
+                        const responseText = await response.text();
+                        console.log(`Ответ от ${apiUrl}:`, response.status, responseText);
+
+                        if (response.ok && (responseText === 'OK' || responseText.includes('OK'))) {
+                            loginSuccess = true;
+                            this.currentApiUrl = apiUrl;
+                            
+                            // Получаем данные пользователя
+                            await this.getUserData();
+                            break;
+                        }
                     }
+                } catch (e) {
+                    console.log(`Ошибка авторизации на ${apiUrl}:`, e);
                 }
-            } catch (e) {
-                error = e;
-                console.log('Способ 1 не сработал:', e.message);
-            }
-            
-            // Способ 2: Альтернативный формат данных
-            try {
-                response = await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json'
-                    },
-                    body: new URLSearchParams({
-                        'login': username,
-                        'password': password
-                    })
-                });
-                
-                if (response && response.ok) {
-                    const responseText = await response.text();
-                    if (responseText === 'OK') {
-                        await this.getUserData();
-                        return;
-                    }
-                }
-            } catch (e) {
-                error = e;
-                console.log('Способ 2 не сработал:', e.message);
-            }
-            
-            // Способ 3: GET с basic auth
-            try {
-                const basicAuth = btoa(`${username}:${password}`);
-                response = await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: {
-                        'Authorization': `Basic ${basicAuth}`,
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (response && response.ok) {
-                    const userData = await response.json();
-                    if (userData && userData.login) {
-                        this.currentUser = this.processUserData(userData);
-                        localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                        
-                        this.showScreen('loading-screen');
-                        setTimeout(() => {
-                            this.showUserPanel();
-                        }, 500);
-                        return;
-                    }
-                }
-            } catch (e) {
-                error = e;
-                console.log('Способ 3 не сработал:', e.message);
             }
 
-            // Если все способы не сработали
-            throw error || new Error('Не удалось авторизоваться');
-
-        } catch (error) {
-            console.error('Ошибка авторизации:', error);
-            
-            // Показываем демо-режим для тестирования
-            if (confirm('Не удалось подключиться к серверу. Перейти в демо-режим?')) {
-                this.startDemoMode(username);
+            if (loginSuccess) {
+                this.showUserPanel();
             } else {
-                loginError.textContent = 'Ошибка подключения к серверу. Проверьте соединение.';
+                loginError.textContent = 'Неверный логин или пароль';
                 loginError.style.display = 'block';
                 this.resetLoginButton();
             }
+
+        } catch (error) {
+            console.error('Ошибка авторизации:', error);
+            loginError.textContent = 'Ошибка подключения к серверу. Проверьте интернет-соединение.';
+            loginError.style.display = 'block';
+            this.resetLoginButton();
         }
     }
 
-    // Запуск демо-режима
-    startDemoMode(username) {
-        // Создаем тестового пользователя
-        const isAdmin = username.toLowerCase().includes('admin');
-        
-        this.currentUser = {
-            login: username,
-            fullname: isAdmin ? 'Администратор' : (username === 'astrunin' ? 'Аструнин А.А.' : 'Иванов И.И.'),
-            f: isAdmin ? 'Администратор' : (username === 'astrunin' ? 'Аструнин' : 'Иванов'),
-            i: 'А',
-            o: 'А',
-            userid: 1234,
-            group: isAdmin ? 'Администраторы' : 'Ученики',
-            groupid: isAdmin ? 2 : 1,
-            tarif: isAdmin ? 'Администратор' : 'Ученический',
-            tarifid: isAdmin ? 2 : 1,
-            date_begin: new Date().toISOString(),
-            date_end: '2037-06-30 23:59:59',
-            role: isAdmin ? 'admin' : 'student',
-            isDemo: true
-        };
-
-        localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-        
-        this.showScreen('loading-screen');
-        setTimeout(() => {
-            this.showUserPanel();
-            this.showNotification('Демо-режим: данные сохраняются локально', 'warning');
-        }, 500);
-    }
-
-    // Получение данных пользователя после успешного входа
+    // Получение данных пользователя
     async getUserData() {
         try {
-            const userResponse = await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
+            const response = await this.fetchWithProxy(`${this.currentApiUrl}/login/`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: {
@@ -409,47 +329,36 @@ class SurveyApp {
                 }
             });
 
-            if (userResponse && userResponse.ok) {
-                const userData = await userResponse.json();
+            if (response && response.ok) {
+                const userData = await response.json();
                 console.log('Данные пользователя:', userData);
                 
-                this.currentUser = this.processUserData(userData);
-                localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                // Определяем роль на основе тарифа или группы
+                const role = userData.tarif === 'Администратор' || userData.group === 'Администраторы' ? 'admin' : 'student';
                 
-                this.showScreen('loading-screen');
-                setTimeout(() => {
-                    this.showUserPanel();
-                }, 500);
-            } else {
-                throw new Error('Не удалось получить данные пользователя');
+                this.currentUser = {
+                    login: userData.login,
+                    fullname: userData.fullname,
+                    f: userData.f,
+                    i: userData.i,
+                    o: userData.o,
+                    userid: userData.userid,
+                    group: userData.group,
+                    groupid: userData.groupid,
+                    tarif: userData.tarif,
+                    tarifid: userData.tarifid,
+                    date_begin: userData.date_begin,
+                    date_end: userData.date_end,
+                    role: role
+                };
+
+                localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                return true;
             }
         } catch (error) {
             console.error('Ошибка получения данных пользователя:', error);
-            throw error;
         }
-    }
-
-    // Обработка данных пользователя
-    processUserData(userData) {
-        // Определяем роль на основе тарифа или группы
-        const role = userData.tarif === 'Администратор' || userData.group === 'Администраторы' ? 'admin' : 'student';
-        
-        return {
-            login: userData.login,
-            fullname: userData.fullname || `${userData.f || ''} ${userData.i || ''}. ${userData.o || ''}.`,
-            f: userData.f,
-            i: userData.i,
-            o: userData.o,
-            userid: userData.userid,
-            group: userData.group,
-            groupid: userData.groupid,
-            tarif: userData.tarif,
-            tarifid: userData.tarifid,
-            date_begin: userData.date_begin,
-            date_end: userData.date_end,
-            role: role,
-            isDemo: false
-        };
+        return false;
     }
 
     // Сброс кнопки входа
@@ -472,9 +381,9 @@ class SurveyApp {
             document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
         });
         
-        // Пробуем завершить сессию на сервере
+        // Пробуем выйти на сервере
         try {
-            await this.fetchWithProxy(`${this.apiBaseUrl}/login/`, {
+            await this.fetchWithProxy(`${this.currentApiUrl}/login/`, {
                 method: 'DELETE',
                 credentials: 'include'
             });
@@ -493,30 +402,10 @@ class SurveyApp {
         document.getElementById('user-name').textContent = this.currentUser.fullname || this.currentUser.login;
         document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.group === 'Ученики' ? 'Ученик' : this.currentUser.group);
         document.getElementById('user-group').textContent = this.currentUser.group || '';
-        
-        // Добавляем индикатор демо-режима
-        if (this.currentUser.isDemo) {
-            const userInfo = document.getElementById('user-info');
-            const demoBadge = document.createElement('span');
-            demoBadge.className = 'demo-badge';
-            demoBadge.textContent = 'ДЕМО';
-            demoBadge.style.cssText = `
-                background: var(--warning);
-                color: white;
-                padding: 0.25rem 0.5rem;
-                border-radius: 12px;
-                font-size: 0.7rem;
-                margin-left: 0.5rem;
-            `;
-            userInfo.querySelector('.user-details').appendChild(demoBadge);
-        }
-        
         document.getElementById('user-info').style.display = 'flex';
         
         // Определяем роль на основе тарифа
-        const isAdmin = this.currentUser.role === 'admin' || 
-                       this.currentUser.tarif === 'Администратор' || 
-                       this.currentUser.group === 'Администраторы';
+        const isAdmin = this.currentUser.tarif === 'Администратор' || this.currentUser.group === 'Администраторы';
         
         if (isAdmin) {
             this.showScreen('admin-panel');
@@ -892,7 +781,6 @@ class SurveyApp {
 
     // Показать уведомление
     showNotification(message, type = 'info') {
-        // Создаем элемент уведомления
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.innerHTML = `
@@ -904,7 +792,6 @@ class SurveyApp {
         
         document.body.appendChild(notification);
         
-        // Удаляем уведомление через 3 секунды
         setTimeout(() => {
             notification.style.animation = 'slideOutRight 0.3s ease-in';
             setTimeout(() => {
@@ -1053,13 +940,10 @@ class SurveyApp {
     // Экспорт в Excel
     exportToExcel(survey, responses, includeTimestamps, includeQuestions) {
         try {
-            // Создаем рабочую книгу
             const wb = XLSX.utils.book_new();
             
-            // Подготавливаем данные
             const data = [];
             
-            // Заголовок
             const header = ['ФИО ученика'];
             if (includeTimestamps) {
                 header.push('Дата и время прохождения');
@@ -1077,7 +961,6 @@ class SurveyApp {
             
             data.push(header);
             
-            // Данные
             responses.forEach(response => {
                 const row = [response.studentName];
                 
@@ -1103,20 +986,16 @@ class SurveyApp {
                 data.push(row);
             });
             
-            // Создаем рабочий лист
             const ws = XLSX.utils.aoa_to_sheet(data);
             
-            // Настраиваем ширину колонок
             const colWidths = [];
             header.forEach((_, index) => {
                 colWidths.push({ wch: 20 });
             });
             ws['!cols'] = colWidths;
             
-            // Добавляем лист в книгу
             XLSX.utils.book_append_sheet(wb, ws, 'Результаты анкеты');
             
-            // Создаем лист с информацией об анкете
             const infoData = [
                 ['Информация об анкете'],
                 ['Название:', survey.title],
@@ -1150,7 +1029,6 @@ class SurveyApp {
             infoWs['!cols'] = [{ wch: 20 }, { wch: 50 }];
             XLSX.utils.book_append_sheet(wb, infoWs, 'Информация');
             
-            // Генерируем файл
             const fileName = `Результаты_${survey.title.replace(/[^\wа-яА-ЯёЁ\s]/gi, '')}_${new Date().toISOString().split('T')[0]}.xlsx`;
             XLSX.writeFile(wb, fileName);
             
@@ -1167,7 +1045,6 @@ class SurveyApp {
         try {
             let csv = '';
             
-            // Заголовок
             csv += 'ФИО ученика';
             if (includeTimestamps) {
                 csv += ',Дата и время прохождения';
@@ -1184,7 +1061,6 @@ class SurveyApp {
             }
             csv += '\n';
             
-            // Данные
             responses.forEach(response => {
                 csv += `"${response.studentName}"`;
                 
@@ -1210,7 +1086,6 @@ class SurveyApp {
                 csv += '\n';
             });
             
-            // Создаем и скачиваем файл
             const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -1267,7 +1142,6 @@ class SurveyApp {
                     <textarea name="question_${question.id}" rows="3" placeholder="Введите ваш ответ..." required></textarea>
                 `;
             } else if (question.type === 'radio' || question.type === 'checkbox') {
-                // Проверяем доступные варианты
                 question.options.forEach(option => {
                     const selectedCount = this.getRemainingSelections(surveyId, question.id, option.text);
                     const isExhausted = question.disappearingOptions && selectedCount >= option.maxSelections;
@@ -1315,7 +1189,6 @@ class SurveyApp {
         
         document.getElementById('survey-content').innerHTML = surveyHTML;
         
-        // Добавляем CSS для бейджей
         const style = document.createElement('style');
         style.textContent = `
             .remaining-badge {
@@ -1349,13 +1222,12 @@ class SurveyApp {
         const formData = new FormData(e.target);
         const answers = [];
         
-        // Проверяем, что все обязательные поля заполнены
         let hasError = false;
         
         this.currentSurvey.questions.forEach(question => {
             if (question.type === 'radio') {
                 const selectedOption = formData.get(`question_${question.id}`);
-                if (!selectedOption && question.options.some(opt => !this.getRemainingSelections(surveyId, question.id, opt.text))) {
+                if (!selectedOption) {
                     this.showNotification(`Выберите вариант для вопроса "${question.text}"`, 'error');
                     hasError = true;
                 }
@@ -1371,7 +1243,6 @@ class SurveyApp {
                     selectedOptions.push(checkbox.value);
                 });
                 
-                // Проверяем исчерпание вариантов
                 if (question.disappearingOptions) {
                     const unavailableOptions = [];
                     selectedOptions.forEach(optionText => {
@@ -1396,7 +1267,6 @@ class SurveyApp {
             } else if (question.type === 'radio') {
                 const selectedOption = formData.get(`question_${question.id}`);
                 if (selectedOption) {
-                    // Проверяем исчерпание варианта
                     if (question.disappearingOptions) {
                         const selectedCount = this.getRemainingSelections(surveyId, question.id, selectedOption);
                         const option = question.options.find(opt => opt.text === selectedOption);
@@ -1499,7 +1369,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Добавляем обработку сетевых ошибок
 window.addEventListener('offline', () => {
     app.showNotification('Нет подключения к интернету', 'error');
 });
@@ -1508,28 +1377,6 @@ window.addEventListener('online', () => {
     app.showNotification('Подключение восстановлено', 'success');
 });
 
-// Глобальная обработка ошибок
 window.addEventListener('error', (event) => {
     console.error('Глобальная ошибка:', event.error);
 });
-
-// Добавляем стили для демо-режима
-const style = document.createElement('style');
-style.textContent = `
-    .demo-badge {
-        background: var(--warning);
-        color: white;
-        padding: 0.25rem 0.5rem;
-        border-radius: 12px;
-        font-size: 0.7rem;
-        margin-left: 0.5rem;
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.7; }
-        100% { opacity: 1; }
-    }
-`;
-document.head.appendChild(style);
