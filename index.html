@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анкетирование - Гимназия №42</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Шапка -->
+        <header class="header">
+            <div class="container">
+                <div class="header-content">
+                    <div class="logo">
+                        <i class="fas fa-graduation-cap"></i>
+                        <h1>Гимназия №42</h1>
+                    </div>
+                    <div id="user-info" class="user-info" style="display: none;">
+                        <div class="user-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="user-details">
+                            <span id="user-name" class="user-name"></span>
+                            <span id="user-role" class="user-role"></span>
+                            <span id="user-group" class="user-group"></span>
+                        </div>
+                        <button id="logout-btn" class="btn-logout">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Экран авторизации -->
+        <div id="login-screen" class="screen active">
+            <div class="container">
+                <div class="login-container">
+                    <div class="login-card">
+                        <div class="login-header">
+                            <div class="login-icon">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                            <h2>Система анкетирования</h2>
+                            <p>Авторизация через систему сетевых дисков</p>
+                        </div>
+                        <form id="login-form" class="login-form">
+                            <div class="input-group">
+                                <i class="fas fa-user input-icon"></i>
+                                <input type="text" id="username" placeholder="Введите ваш логин" required>
+                            </div>
+                            <div class="input-group">
+                                <i class="fas fa-lock input-icon"></i>
+                                <input type="password" id="password" placeholder="Введите ваш пароль" required>
+                            </div>
+                            <button type="submit" class="btn-login" id="login-button">
+                                <i class="fas fa-sign-in-alt"></i>
+                                <span>Войти в систему</span>
+                            </button>
+                            <div id="login-error" class="login-error" style="display: none;"></div>
+                        </form>
+                        <div class="system-info">
+                            <p><i class="fas fa-info-circle"></i> Для входа используйте учетные данные системы сетевых дисков</p>
+                            <p class="api-info"><i class="fas fa-cloud"></i> Подключение к api.gym42.ru</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экран загрузки -->
+        <div id="loading-screen" class="screen">
+            <div class="container">
+                <div class="loading-container">
+                    <div class="loading-spinner"></div>
+                    <p>Загрузка данных...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Панель администратора -->
+        <div id="admin-panel" class="screen">
+            <div class="container">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <h2><i class="fas fa-tachometer-alt"></i> Панель администратора</h2>
+                        <p>Управление анкетами и просмотр результатов</p>
+                    </div>
+                    <button id="create-survey-btn" class="btn-primary">
+                        <i class="fas fa-plus"></i>
+                        Создать анкету
+                    </button>
+                </div>
+
+                <!-- Статистика -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="fas fa-clipboard-list"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="total-surveys">0</h3>
+                            <p>Всего анкет</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="active-surveys">0</h3>
+                            <p>Активных анкет</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="total-responses">0</h3>
+                            <p>Всего ответов</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Список анкет -->
+                <div class="surveys-section">
+                    <div class="section-header">
+                        <h3><i class="fas fa-list"></i> Мои анкеты</h3>
+                        <div class="section-actions">
+                            <button id="filter-all" class="filter-btn active">Все</button>
+                            <button id="filter-active" class="filter-btn">Активные</button>
+                            <button id="filter-inactive" class="filter-btn">Неактивные</button>
+                        </div>
+                    </div>
+                    <div id="surveys-container" class="surveys-grid">
+                        <!-- Анкеты будут загружаться здесь -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Панель ученика -->
+        <div id="student-panel" class="screen">
+            <div class="container">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <h2><i class="fas fa-user-graduate"></i> Доступные анкеты</h2>
+                        <p>Примите участие в анкетировании</p>
+                    </div>
+                </div>
+                <div id="available-surveys" class="surveys-grid">
+                    <!-- Доступные анкеты будут здесь -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно создания/редактирования анкеты -->
+        <div id="survey-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Создать новую анкету</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <form id="survey-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="survey-title">Название анкеты *</label>
+                            <input type="text" id="survey-title" required placeholder="Введите название анкеты">
+                        </div>
+                        <div class="form-group">
+                            <label for="survey-status">Статус</label>
+                            <select id="survey-status">
+                                <option value="true">Активна</option>
+                                <option value="false">Неактивна</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="survey-description">Описание анкеты</label>
+                        <textarea id="survey-description" rows="3" placeholder="Опишите цель анкеты..."></textarea>
+                    </div>
+                    
+                    <div class="questions-section">
+                        <div class="section-header">
+                            <h4>Вопросы анкеты</h4>
+                            <button type="button" id="add-question-btn" class="btn-secondary">
+                                <i class="fas fa-plus"></i>
+                                Добавить вопрос
+                            </button>
+                        </div>
+                        <div id="questions-container">
+                            <!-- Вопросы будут добавляться здесь -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">
+                            <i class="fas fa-save"></i>
+                            Сохранить анкету
+                        </button>
+                        <button type="button" class="btn-secondary cancel-btn">
+                            <i class="fas fa-times"></i>
+                            Отмена
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Экран прохождения анкеты -->
+        <div id="survey-screen" class="screen">
+            <div class="container">
+                <div class="survey-container">
+                    <div id="survey-content">
+                        <!-- Содержимое анкеты будет здесь -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экран результатов -->
+        <div id="results-screen" class="screen">
+            <div class="container">
+                <div class="results-container">
+                    <div id="results-content">
+                        <!-- Результаты будут здесь -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно экспорта -->
+        <div id="export-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-file-excel"></i> Экспорт результатов</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="export-options">
+                        <div class="export-option">
+                            <input type="radio" id="export-excel" name="export-format" value="excel" checked>
+                            <label for="export-excel">
+                                <i class="fas fa-file-excel"></i>
+                                <div>
+                                    <strong>Excel формат (.xlsx)</strong>
+                                    <span>Рекомендуется для анализа в Excel</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="export-option">
+                            <input type="radio" id="export-csv" name="export-format" value="csv">
+                            <label for="export-csv">
+                                <i class="fas fa-file-csv"></i>
+                                <div>
+                                    <strong>CSV формат (.csv)</strong>
+                                    <span>Универсальный текстовый формат</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="export-settings">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="include-timestamps" checked>
+                                Включить даты прохождения
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="include-questions" checked>
+                                Включить текст вопросов
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="confirm-export" class="btn-primary">
+                        <i class="fas fa-download"></i>
+                        Экспортировать
+                    </button>
+                    <button class="btn-secondary cancel-export">
+                        <i class="fas fa-times"></i>
+                        Отмена
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Шаблоны -->
+    <template id="survey-card-template">
+        <div class="survey-card">
+            <div class="survey-header">
+                <div class="survey-status-badge"></div>
+                <h4 class="survey-title"></h4>
+                <div class="survey-actions-dropdown">
+                    <button class="dropdown-btn">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <div class="dropdown-menu">
+                        <button class="dropdown-item edit-survey-btn">
+                            <i class="fas fa-edit"></i>Редактировать
+                        </button>
+                        <button class="dropdown-item toggle-status-btn">
+                            <i class="fas fa-power-off"></i>Изменить статус
+                        </button>
+                        <button class="dropdown-item copy-link-btn">
+                            <i class="fas fa-link"></i>Скопировать ссылку
+                        </button>
+                        <button class="dropdown-item view-results-btn">
+                            <i class="fas fa-chart-bar"></i>Результаты
+                        </button>
+                        <button class="dropdown-item export-results-btn">
+                            <i class="fas fa-file-export"></i>Экспорт результатов
+                        </button>
+                        <button class="dropdown-item delete-survey-btn">
+                            <i class="fas fa-trash"></i>Удалить
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <p class="survey-description"></p>
+            <div class="survey-footer">
+                <div class="survey-meta">
+                    <span class="meta-item">
+                        <i class="fas fa-question-circle"></i>
+                        <span class="questions-count"></span> вопросов
+                    </span>
+                    <span class="meta-item">
+                        <i class="fas fa-users"></i>
+                        <span class="responses-count"></span> ответов
+                    </span>
+                    <span class="meta-item">
+                        <i class="fas fa-calendar"></i>
+                        <span class="created-date"></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="question-template">
+        <div class="question-card">
+            <div class="question-header">
+                <h5>Вопрос <span class="question-number"></span></h5>
+                <button type="button" class="btn-danger remove-question-btn">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="form-group">
+                <label>Текст вопроса *</label>
+                <input type="text" class="question-text" placeholder="Введите вопрос" required>
+            </div>
+            <div class="form-group">
+                <label>Тип вопроса *</label>
+                <select class="question-type">
+                    <option value="text">Текстовый ответ</option>
+                    <option value="radio">Один вариант</option>
+                    <option value="checkbox">Несколько вариантов</option>
+                </select>
+            </div>
+            <div class="options-container" style="display: none;">
+                <label>Варианты ответов *</label>
+                <div class="options-list">
+                    <!-- Варианты будут добавляться здесь -->
+                </div>
+                <button type="button" class="btn-secondary add-option-btn">
+                    <i class="fas fa-plus"></i>
+                    Добавить вариант
+                </button>
+                <div class="option-settings">
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="disappearing-options">
+                        <span>Исчезающие варианты</span>
+                        <i class="fas fa-info-circle tooltip" title="Если выбран этот вариант, он становится недоступным для других участников"></i>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="option-template">
+        <div class="option-item">
+            <input type="text" class="option-input" placeholder="Введите вариант ответа" required>
+            <div class="option-actions">
+                <span class="option-status" title="Количество оставшихся выборов" style="display: none;">
+                    <i class="fas fa-users"></i>
+                    <span class="remaining-count">∞</span>
+                </span>
+                <button type="button" class="btn-danger remove-option-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html>
