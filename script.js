@@ -1,4 +1,3 @@
-// Основной класс приложения
 class SurveyApp {
     constructor() {
         this.currentUser = null;
@@ -13,18 +12,14 @@ class SurveyApp {
         this.checkAuth();
     }
 
-    // Инициализация обработчиков событий
     initializeEventListeners() {
-        // Авторизация
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
         document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
 
-        // Создание и редактирование анкеты
         document.getElementById('create-survey-btn').addEventListener('click', () => this.showCreateSurveyModal());
         document.getElementById('add-question-btn').addEventListener('click', () => this.addQuestion());
         document.getElementById('survey-form').addEventListener('submit', (e) => this.handleSaveSurvey(e));
 
-        // Модальные окна
         document.querySelectorAll('.close').forEach(close => {
             close.addEventListener('click', (e) => {
                 const modal = e.target.closest('.modal');
@@ -35,17 +30,13 @@ class SurveyApp {
         document.querySelector('.cancel-btn').addEventListener('click', () => this.hideSurveyModal());
         document.querySelector('.cancel-export').addEventListener('click', () => this.hideExportModal());
 
-        // Экспорт
         document.getElementById('confirm-export').addEventListener('click', () => this.handleExport());
 
-        // Фильтры
         document.getElementById('filter-all').addEventListener('click', () => this.setFilter('all'));
         document.getElementById('filter-active').addEventListener('click', () => this.setFilter('active'));
-        document.getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
+       .getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
 
-        // Динамические обработчики
         document.addEventListener('click', (e) => {
-            // Dropdown меню
             if (e.target.closest('.dropdown-btn')) {
                 this.toggleDropdown(e.target.closest('.dropdown-btn'));
             } else {
@@ -54,7 +45,6 @@ class SurveyApp {
                 });
             }
 
-            // Удаление вопросов и вариантов
             if (e.target.classList.contains('remove-question-btn')) {
                 e.target.closest('.question-card').remove();
                 this.updateQuestionNumbers();
@@ -64,17 +54,14 @@ class SurveyApp {
                 e.target.closest('.option-item').remove();
             }
 
-            // Тип вопроса
             if (e.target.classList.contains('question-type')) {
                 this.toggleOptions(e.target);
             }
 
-            // Добавление вариантов
             if (e.target.classList.contains('add-option-btn')) {
                 this.addOption(e.target.closest('.options-container'));
             }
 
-            // Действия с анкетами
             if (e.target.closest('.copy-link-btn')) {
                 this.copySurveyLink(e.target.closest('.survey-card'));
             }
@@ -100,7 +87,6 @@ class SurveyApp {
             }
         });
 
-        // Закрытие модальных окон при клике вне их
         window.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
@@ -108,7 +94,6 @@ class SurveyApp {
         });
     }
 
-    // Переключение dropdown меню
     toggleDropdown(button) {
         const menu = button.nextElementSibling;
         const isVisible = menu.classList.contains('show');
@@ -122,16 +107,13 @@ class SurveyApp {
         }
     }
 
-    // Проверка авторизации
     async checkAuth() {
-        // Проверяем, есть ли cookie PHPSESSID
         const hasSession = document.cookie.includes('PHPSESSID');
         
         if (hasSession) {
             this.showScreen('loading-screen');
             
             try {
-                // Проверяем сессию на сервере
                 const response = await fetch('https://api.gym42.ru/login/', {
                     method: 'GET',
                     credentials: 'include',
@@ -160,11 +142,10 @@ class SurveyApp {
                     localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
                     this.showUserPanel();
                 } else {
-                    // Сессия недействительна
                     this.showScreen('login-screen');
                 }
             } catch (error) {
-                console.error('Ошибка проверки сессии:', error);
+                console.error(error);
                 this.showScreen('login-screen');
             }
         } else {
@@ -172,7 +153,6 @@ class SurveyApp {
         }
     }
 
-    // Обработка входа
     async handleLogin(e) {
         e.preventDefault();
         
@@ -181,7 +161,6 @@ class SurveyApp {
         const loginButton = document.getElementById('login-button');
         const loginError = document.getElementById('login-error');
 
-        // Блокируем кнопку и показываем спиннер
         loginButton.disabled = true;
         loginButton.innerHTML = `
             <span>Вход...</span>
@@ -190,7 +169,6 @@ class SurveyApp {
         loginError.style.display = 'none';
 
         try {
-            // Отправляем POST запрос на сервер
             const response = await fetch('https://api.gym42.ru/login/', {
                 method: 'POST',
                 credentials: 'include',
@@ -204,10 +182,7 @@ class SurveyApp {
                 })
             });
 
-            const responseText = await response.text();
-
-            if (response.ok && responseText === 'OK') {
-                // Успешный вход, получаем данные пользователя
+            if (response.ok) {
                 const userResponse = await fetch('https://api.gym42.ru/login/', {
                     method: 'GET',
                     credentials: 'include',
@@ -236,15 +211,13 @@ class SurveyApp {
 
                     localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
                     
-                    // Показываем экран загрузки перед переходом
                     this.showScreen('loading-screen');
                     
-                    // Небольшая задержка для плавности
                     setTimeout(() => {
                         this.showUserPanel();
                     }, 500);
                 } else {
-                    throw new Error('Не удалось получить данные пользователя');
+                    throw new Error();
                 }
             } else {
                 loginError.textContent = 'Неверный логин или пароль';
@@ -252,14 +225,13 @@ class SurveyApp {
                 this.resetLoginButton();
             }
         } catch (error) {
-            console.error('Ошибка авторизации:', error);
+            console.error(error);
             loginError.textContent = 'Ошибка подключения к серверу';
             loginError.style.display = 'block';
             this.resetLoginButton();
         }
     }
 
-    // Сброс кнопки входа
     resetLoginButton() {
         const loginButton = document.getElementById('login-button');
         loginButton.disabled = false;
@@ -269,22 +241,19 @@ class SurveyApp {
         `;
     }
 
-    // Выход из системы
     async handleLogout() {
         this.currentUser = null;
         localStorage.removeItem('currentUser');
         
-        // Очищаем cookie (на стороне клиента)
         document.cookie = 'PHPSESSID=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         
-        // Можно также отправить запрос на сервер для завершения сессии
         try {
             await fetch('https://api.gym42.ru/login/', {
                 method: 'DELETE',
                 credentials: 'include'
             });
         } catch (error) {
-            console.error('Ошибка при выходе:', error);
+            console.error(error);
         }
         
         this.showScreen('login-screen');
@@ -293,14 +262,12 @@ class SurveyApp {
         this.resetLoginButton();
     }
 
-    // Показать соответствующую панель пользователя
     showUserPanel() {
         document.getElementById('user-name').textContent = this.currentUser.fullname || this.currentUser.login;
         document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.group === 'Ученики' ? 'Ученик' : this.currentUser.group);
         document.getElementById('user-group').textContent = this.currentUser.group || '';
         document.getElementById('user-info').style.display = 'flex';
         
-        // Определяем роль на основе группы
         const isAdmin = this.currentUser.tarif === 'Администратор' || this.currentUser.group === 'Администраторы';
         
         if (isAdmin) {
@@ -313,7 +280,6 @@ class SurveyApp {
         }
     }
 
-    // Показать экран
     showScreen(screenId) {
         document.querySelectorAll('.screen').forEach(screen => {
             screen.classList.remove('active');
@@ -321,7 +287,6 @@ class SurveyApp {
         document.getElementById(screenId).classList.add('active');
     }
 
-    // Обновление статистики
     updateStats() {
         const totalSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login).length;
         const activeSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login && s.isActive).length;
@@ -334,11 +299,9 @@ class SurveyApp {
         document.getElementById('total-responses').textContent = totalResponses;
     }
 
-    // Установка фильтра
     setFilter(filter) {
         this.currentFilter = filter;
         
-        // Обновление активной кнопки
         document.querySelectorAll('.filter-btn').forEach(btn => {
             btn.classList.remove('active');
         });
@@ -347,7 +310,6 @@ class SurveyApp {
         this.loadAdminSurveys();
     }
 
-    // Модальное окно создания/редактирования анкеты
     showCreateSurveyModal() {
         this.editingSurveyId = null;
         document.getElementById('modal-title').textContent = 'Создать новую анкету';
@@ -365,12 +327,10 @@ class SurveyApp {
         document.getElementById('modal-title').textContent = 'Редактировать анкету';
         document.getElementById('survey-modal').style.display = 'block';
         
-        // Заполнение данных анкеты
         document.getElementById('survey-title').value = survey.title;
         document.getElementById('survey-description').value = survey.description || '';
         document.getElementById('survey-status').value = survey.isActive.toString();
         
-        // Очистка и заполнение вопросов
         document.getElementById('questions-container').innerHTML = '';
         survey.questions.forEach((question, index) => {
             this.addQuestion(question);
@@ -384,7 +344,6 @@ class SurveyApp {
         this.editingSurveyId = null;
     }
 
-    // Модальное окно экспорта
     showExportModal(cardElement) {
         this.exportSurveyId = parseInt(cardElement.dataset.surveyId);
         document.getElementById('export-modal').style.display = 'block';
@@ -395,7 +354,6 @@ class SurveyApp {
         this.exportSurveyId = null;
     }
 
-    // Добавление вопроса
     addQuestion(questionData = null) {
         const template = document.getElementById('question-template');
         const questionElement = template.content.cloneNode(true);
@@ -409,7 +367,6 @@ class SurveyApp {
                 const optionsContainer = questionCard.querySelector('.options-container');
                 optionsContainer.style.display = 'block';
                 
-                // Устанавливаем настройку исчезающих вариантов
                 if (questionData.disappearingOptions) {
                     optionsContainer.querySelector('.disappearing-options').checked = true;
                 }
@@ -424,14 +381,12 @@ class SurveyApp {
         this.updateQuestionNumbers();
     }
 
-    // Обновление нумерации вопросов
     updateQuestionNumbers() {
         document.querySelectorAll('.question-card').forEach((card, index) => {
             card.querySelector('.question-number').textContent = index + 1;
         });
     }
 
-    // Добавление варианта ответа
     addOption(container, value = '', questionData = null) {
         const template = document.getElementById('option-template');
         const optionElement = template.content.cloneNode(true);
@@ -448,7 +403,6 @@ class SurveyApp {
             optionInput.value = value;
         }
         
-        // Показываем статус варианта если включены исчезающие варианты
         const disappearingEnabled = container.querySelector('.disappearing-options').checked;
         if (disappearingEnabled) {
             optionStatus.style.display = 'flex';
@@ -457,12 +411,10 @@ class SurveyApp {
         container.querySelector('.options-list').appendChild(optionElement);
     }
 
-    // Переключение отображения вариантов ответов
     toggleOptions(selectElement) {
         const optionsContainer = selectElement.closest('.question-card').querySelector('.options-container');
         if (selectElement.value === 'radio' || selectElement.value === 'checkbox') {
             optionsContainer.style.display = 'block';
-            // Добавляем один вариант по умолчанию если их нет
             if (optionsContainer.querySelectorAll('.option-item').length === 0) {
                 this.addOption(optionsContainer);
             }
@@ -471,7 +423,6 @@ class SurveyApp {
         }
     }
 
-    // Сохранение анкеты (создание или редактирование)
     handleSaveSurvey(e) {
         e.preventDefault();
         
@@ -510,7 +461,6 @@ class SurveyApp {
         });
 
         if (this.editingSurveyId) {
-            // Редактирование существующей анкеты
             const surveyIndex = this.surveys.findIndex(s => s.id === this.editingSurveyId);
             this.surveys[surveyIndex] = {
                 ...this.surveys[surveyIndex],
@@ -520,7 +470,6 @@ class SurveyApp {
                 isActive
             };
         } else {
-            // Создание новой анкеты
             const survey = {
                 id: Date.now(),
                 title: title,
@@ -546,7 +495,6 @@ class SurveyApp {
         );
     }
 
-    // Загрузка анкет для администратора
     loadAdminSurveys() {
         const container = document.getElementById('surveys-container');
         const template = document.getElementById('survey-card-template');
@@ -555,7 +503,6 @@ class SurveyApp {
         
         let adminSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login);
         
-        // Применение фильтра
         if (this.currentFilter === 'active') {
             adminSurveys = adminSurveys.filter(s => s.isActive);
         } else if (this.currentFilter === 'inactive') {
@@ -572,7 +519,6 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = responsesCount;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
-            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (survey.isActive) {
                 statusBadge.classList.add('active');
@@ -588,7 +534,6 @@ class SurveyApp {
         });
     }
 
-    // Загрузка доступных анкет для учеников
     loadAvailableSurveys() {
         const container = document.getElementById('available-surveys');
         const template = document.getElementById('survey-card-template');
@@ -609,7 +554,6 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = this.responses.filter(r => r.surveyId === survey.id).length;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
-            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (hasResponded) {
                 statusBadge.classList.add('inactive');
@@ -619,10 +563,8 @@ class SurveyApp {
                 statusBadge.title = 'Доступна';
             }
             
-            // Убираем dropdown меню для учеников
             card.querySelector('.survey-actions-dropdown').remove();
             
-            // Добавляем кнопку для прохождения анкеты
             if (!hasResponded) {
                 const takeSurveyBtn = document.createElement('button');
                 takeSurveyBtn.className = 'btn-primary';
@@ -635,7 +577,6 @@ class SurveyApp {
         });
     }
 
-    // Получение оставшихся выборов для вариантов ответов
     getRemainingSelections(surveyId, questionId, optionText) {
         const responses = this.responses.filter(r => r.surveyId === surveyId);
         let selectedCount = 0;
@@ -656,7 +597,6 @@ class SurveyApp {
         return selectedCount;
     }
 
-    // Копирование ссылки на анкету
     copySurveyLink(cardElement) {
         const surveyId = cardElement.dataset.surveyId;
         const surveyLink = `${window.location.origin}${window.location.pathname}?survey=${surveyId}`;
@@ -666,9 +606,7 @@ class SurveyApp {
         });
     }
 
-    // Показать уведомление
     showNotification(message, type = 'info') {
-        // Создаем элемент уведомления
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.innerHTML = `
@@ -680,7 +618,6 @@ class SurveyApp {
         
         document.body.appendChild(notification);
         
-        // Удаляем уведомление через 3 секунды
         setTimeout(() => {
             notification.style.animation = 'slideOutRight 0.3s ease-in';
             setTimeout(() => {
@@ -691,13 +628,11 @@ class SurveyApp {
         }, 3000);
     }
 
-    // Редактирование анкеты
     editSurvey(cardElement) {
         const surveyId = parseInt(cardElement.dataset.surveyId);
         this.showEditSurveyModal(surveyId);
     }
 
-    // Переключение статуса анкеты
     toggleSurveyStatus(cardElement) {
         const surveyId = parseInt(cardElement.dataset.surveyId);
         const survey = this.surveys.find(s => s.id === surveyId);
@@ -713,7 +648,6 @@ class SurveyApp {
         );
     }
 
-    // Просмотр результатов
     viewResults(cardElement) {
         const surveyId = parseInt(cardElement.dataset.surveyId);
         const survey = this.surveys.find(s => s.id === surveyId);
@@ -787,7 +721,6 @@ class SurveyApp {
         
         resultsHTML += `</tbody></table></div>`;
         
-        // Добавляем скрытую карточку для экспорта
         resultsHTML += `
             <div class="survey-card" data-survey-id="${surveyId}" style="display: none;">
                 ${survey.title}
@@ -798,7 +731,6 @@ class SurveyApp {
         this.showScreen('results-screen');
     }
 
-    // Форматирование ответа для отображения
     formatAnswer(answer) {
         if (Array.isArray(answer.value)) {
             return answer.value.join(', ');
@@ -806,7 +738,6 @@ class SurveyApp {
         return answer.value || '-';
     }
 
-    // Обработка экспорта
     handleExport() {
         if (!this.exportSurveyId) return;
         
@@ -826,16 +757,12 @@ class SurveyApp {
         this.hideExportModal();
     }
 
-    // Экспорт в Excel
     exportToExcel(survey, responses, includeTimestamps, includeQuestions) {
         try {
-            // Создаем рабочую книгу
             const wb = XLSX.utils.book_new();
             
-            // Подготавливаем данные
             const data = [];
             
-            // Заголовок
             const header = ['ФИО ученика'];
             if (includeTimestamps) {
                 header.push('Дата и время прохождения');
@@ -853,7 +780,6 @@ class SurveyApp {
             
             data.push(header);
             
-            // Данные
             responses.forEach(response => {
                 const row = [response.studentName];
                 
@@ -879,20 +805,16 @@ class SurveyApp {
                 data.push(row);
             });
             
-            // Создаем рабочий лист
             const ws = XLSX.utils.aoa_to_sheet(data);
             
-            // Настраиваем ширину колонок
             const colWidths = [];
             header.forEach((_, index) => {
                 colWidths.push({ wch: 20 });
             });
             ws['!cols'] = colWidths;
             
-            // Добавляем лист в книгу
             XLSX.utils.book_append_sheet(wb, ws, 'Результаты анкеты');
             
-            // Создаем лист с информацией об анкете
             const infoData = [
                 ['Информация об анкете'],
                 ['Название:', survey.title],
@@ -926,24 +848,21 @@ class SurveyApp {
             infoWs['!cols'] = [{ wch: 20 }, { wch: 50 }];
             XLSX.utils.book_append_sheet(wb, infoWs, 'Информация');
             
-            // Генерируем файл
             const fileName = `Результаты_${survey.title.replace(/[^\wа-яА-ЯёЁ\s]/gi, '')}_${new Date().toISOString().split('T')[0]}.xlsx`;
             XLSX.writeFile(wb, fileName);
             
             this.showNotification('Результаты успешно экспортированы в Excel!', 'success');
             
         } catch (error) {
-            console.error('Ошибка при экспорте в Excel:', error);
+            console.error(error);
             this.showNotification('Ошибка при экспорте в Excel', 'error');
         }
     }
 
-    // Экспорт в CSV
     exportToCSV(survey, responses, includeTimestamps, includeQuestions) {
         try {
             let csv = '';
             
-            // Заголовок
             csv += 'ФИО ученика';
             if (includeTimestamps) {
                 csv += ',Дата и время прохождения';
@@ -960,7 +879,6 @@ class SurveyApp {
             }
             csv += '\n';
             
-            // Данные
             responses.forEach(response => {
                 csv += `"${response.studentName}"`;
                 
@@ -986,7 +904,6 @@ class SurveyApp {
                 csv += '\n';
             });
             
-            // Создаем и скачиваем файл
             const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -1000,12 +917,11 @@ class SurveyApp {
             this.showNotification('Результаты успешно экспортированы в CSV!', 'success');
             
         } catch (error) {
-            console.error('Ошибка при экспорте в CSV:', error);
+            console.error(error);
             this.showNotification('Ошибка при экспорте в CSV', 'error');
         }
     }
 
-    // Получить название типа вопроса
     getQuestionTypeName(type) {
         const types = {
             'text': 'Текстовый ответ',
@@ -1015,7 +931,6 @@ class SurveyApp {
         return types[type] || type;
     }
 
-    // Прохождение анкеты
     takeSurvey(surveyId) {
         const survey = this.surveys.find(s => s.id === surveyId);
         this.currentSurvey = survey;
@@ -1043,7 +958,6 @@ class SurveyApp {
                     <textarea name="question_${question.id}" rows="3" placeholder="Введите ваш ответ..." required></textarea>
                 `;
             } else if (question.type === 'radio' || question.type === 'checkbox') {
-                // Проверяем доступные варианты
                 question.options.forEach(option => {
                     const selectedCount = this.getRemainingSelections(surveyId, question.id, option.text);
                     const isExhausted = question.disappearingOptions && selectedCount >= option.maxSelections;
@@ -1091,7 +1005,6 @@ class SurveyApp {
         
         document.getElementById('survey-content').innerHTML = surveyHTML;
         
-        // Добавляем CSS для бейджей
         const style = document.createElement('style');
         style.textContent = `
             .remaining-badge {
@@ -1119,7 +1032,6 @@ class SurveyApp {
         this.showScreen('survey-screen');
     }
 
-    // Обработка отправки анкеты
     handleSurveySubmit(e, surveyId) {
         e.preventDefault();
         const formData = new FormData(e.target);
@@ -1132,7 +1044,6 @@ class SurveyApp {
                     selectedOptions.push(checkbox.value);
                 });
                 
-                // Проверяем исчерпание вариантов
                 if (question.disappearingOptions) {
                     const unavailableOptions = [];
                     selectedOptions.forEach(optionText => {
@@ -1156,7 +1067,6 @@ class SurveyApp {
             } else if (question.type === 'radio') {
                 const selectedOption = formData.get(`question_${question.id}`);
                 if (selectedOption) {
-                    // Проверяем исчерпание варианта
                     if (question.disappearingOptions) {
                         const selectedCount = this.getRemainingSelections(surveyId, question.id, selectedOption);
                         const option = question.options.find(opt => opt.text === selectedOption);
@@ -1180,7 +1090,6 @@ class SurveyApp {
         });
         
         if (answers.length !== this.currentSurvey.questions.length) {
-            // Не все вопросы были обработаны (возможно, из-за недоступных вариантов)
             return;
         }
         
@@ -1203,7 +1112,6 @@ class SurveyApp {
         }, 1500);
     }
 
-    // Удаление анкеты
     deleteSurvey(cardElement) {
         const surveyId = parseInt(cardElement.dataset.surveyId);
         const survey = this.surveys.find(s => s.id === surveyId);
@@ -1221,7 +1129,6 @@ class SurveyApp {
         this.showNotification('Анкета успешно удалена!', 'success');
     }
 
-    // Сохранение данных
     saveSurveys() {
         localStorage.setItem('surveys', JSON.stringify(this.surveys));
     }
@@ -1231,10 +1138,8 @@ class SurveyApp {
     }
 }
 
-// Инициализация приложения
 const app = new SurveyApp();
 
-// Обработка ссылок на анкеты
 window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const surveyId = urlParams.get('survey');
@@ -1253,7 +1158,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Добавляем обработку сетевых ошибок
 window.addEventListener('offline', () => {
     app.showNotification('Нет подключения к интернету', 'error');
 });
