@@ -8,7 +8,6 @@ class SurveyApp {
         this.editingSurveyId = null;
         this.currentFilter = 'all';
         this.exportSurveyId = null;
-        this.useDemoMode = false; // Переключатель для демо-режима
         
         this.initializeEventListeners();
         this.checkAuth();
@@ -43,9 +42,6 @@ class SurveyApp {
         document.getElementById('filter-all').addEventListener('click', () => this.setFilter('all'));
         document.getElementById('filter-active').addEventListener('click', () => this.setFilter('active'));
         document.getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
-
-        // Переключение режима (для отладки)
-        document.getElementById('toggle-demo-mode')?.addEventListener('click', () => this.toggleDemoMode());
 
         // Динамические обработчики
         document.addEventListener('click', (e) => {
@@ -112,17 +108,6 @@ class SurveyApp {
         });
     }
 
-    // Переключение демо-режима
-    toggleDemoMode() {
-        this.useDemoMode = !this.useDemoMode;
-        this.showNotification(`Демо-режим ${this.useDemoMode ? 'включен' : 'выключен'}`, 'info');
-        
-        const demoBtn = document.getElementById('toggle-demo-mode');
-        if (demoBtn) {
-            demoBtn.textContent = this.useDemoMode ? '🔴 Демо-режим' : '🟢 Реальный режим';
-        }
-    }
-
     // Переключение dropdown меню
     toggleDropdown(button) {
         const menu = button.nextElementSibling;
@@ -139,80 +124,64 @@ class SurveyApp {
 
     // Проверка авторизации
     async checkAuth() {
-        const savedUser = localStorage.getItem('currentUser');
+        // Проверяем, есть ли cookie PHPSESSID
+        const hasSession = document.cookie.includes('PHPSESSID');
         
-        if (savedUser) {
-            this.currentUser = JSON.parse(savedUser);
+        if (hasSession) {
+            this.showScreen('loading-screen');
             
-            // Пробуем проверить сессию на сервере через JSONP
             try {
-                this.showScreen('loading-screen');
-                const isValid = await this.checkSessionWithJSONP();
-                
-                if (isValid) {
+                // Проверяем сессию на сервере
+                const response = await fetch('https://api.gym42.ru/login/', {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const userData = await response.json();
+                    this.currentUser = {
+                        login: userData.login,
+                        fullname: userData.fullname,
+                        f: userData.f,
+                        i: userData.i,
+                        o: userData.o,
+                        userid: userData.userid,
+                        group: userData.group,
+                        groupid: userData.groupid,
+                        tarif: userData.tarif,
+                        tarifid: userData.tarifid,
+                        date_begin: userData.date_begin,
+                        date_end: userData.date_end
+                    };
+
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
                     this.showUserPanel();
                 } else {
-                    localStorage.removeItem('currentUser');
-                    this.currentUser = null;
+                    // Сессия недействительна
                     this.showScreen('login-screen');
                 }
             } catch (error) {
                 console.error('Ошибка проверки сессии:', error);
-                // Если не удалось проверить, используем сохраненные данные
-                this.showUserPanel();
+                this.showScreen('login-screen');
             }
         } else {
             this.showScreen('login-screen');
         }
     }
 
-    // Проверка сессии через JSONP
-    checkSessionWithJSONP() {
-        return new Promise((resolve) => {
-            const script = document.createElement('script');
-            const callbackName = 'jsonp_callback_' + Date.now();
-            
-            window[callbackName] = (data) => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(true);
-            };
-
-            script.src = `https://api.gym42.ru/login/?callback=${callbackName}`;
-            script.onerror = () => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(false);
-            };
-            
-            document.body.appendChild(script);
-            
-            // Таймаут на случай если сервер не отвечает
-            setTimeout(() => {
-                if (window[callbackName]) {
-                    delete window[callbackName];
-                    document.body.removeChild(script);
-                    resolve(false);
-                }
-            }, 5000);
-        });
-    }
-
     // Обработка входа
     async handleLogin(e) {
         e.preventDefault();
         
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
         const loginButton = document.getElementById('login-button');
         const loginError = document.getElementById('login-error');
 
-        if (!username || !password) {
-            loginError.textContent = 'Введите логин и пароль';
-            loginError.style.display = 'block';
-            return;
-        }
-
+        // Блокируем кнопку и показываем спиннер
         loginButton.disabled = true;
         loginButton.innerHTML = `
             <span>Вход...</span>
@@ -221,133 +190,73 @@ class SurveyApp {
         loginError.style.display = 'none';
 
         try {
-            // Пробуем авторизоваться через JSONP
-            const success = await this.loginWithJSONP(username, password);
-            
-            if (success) {
-                // Получаем данные пользователя
-                const userData = await this.getUserDataWithJSONP();
-                
-                if (userData) {
-                    const role = userData.tarif === 'Администратор' || userData.group === 'Администраторы' ? 'admin' : 'student';
+            // Отправляем POST запрос на сервер
+            const response = await fetch('https://api.gym42.ru/login/', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    login: username,
+                    password: password
+                })
+            });
+
+            const responseText = await response.text();
+
+            if (response.ok && responseText === 'OK') {
+                // Успешный вход, получаем данные пользователя
+                const userResponse = await fetch('https://api.gym42.ru/login/', {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
                     
                     this.currentUser = {
-                        login: userData.login || username,
-                        fullname: userData.fullname || username,
-                        f: userData.f || '',
-                        i: userData.i || '',
-                        o: userData.o || '',
-                        userid: userData.userid || Date.now(),
-                        group: userData.group || (role === 'admin' ? 'Администраторы' : 'Ученики'),
-                        groupid: userData.groupid || (role === 'admin' ? 1 : 2),
-                        tarif: userData.tarif || (role === 'admin' ? 'Администратор' : 'Ученический'),
-                        tarifid: userData.tarifid || (role === 'admin' ? 1 : 2),
-                        date_begin: userData.date_begin || new Date().toISOString(),
-                        date_end: userData.date_end || new Date('2030-12-31').toISOString(),
-                        role: role
+                        login: userData.login,
+                        fullname: userData.fullname,
+                        f: userData.f,
+                        i: userData.i,
+                        o: userData.o,
+                        userid: userData.userid,
+                        group: userData.group,
+                        groupid: userData.groupid,
+                        tarif: userData.tarif,
+                        tarifid: userData.tarifid,
+                        date_begin: userData.date_begin,
+                        date_end: userData.date_end
                     };
 
                     localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
                     
+                    // Показываем экран загрузки перед переходом
                     this.showScreen('loading-screen');
+                    
+                    // Небольшая задержка для плавности
                     setTimeout(() => {
                         this.showUserPanel();
                     }, 500);
                 } else {
-                    // Если не удалось получить данные, создаем базового пользователя
-                    this.currentUser = {
-                        login: username,
-                        fullname: username,
-                        role: 'student'
-                    };
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                    this.showUserPanel();
+                    throw new Error('Не удалось получить данные пользователя');
                 }
             } else {
-                // Если JSONP не работает, используем демо-режим
-                if (this.useDemoMode || confirm('Не удалось подключиться к серверу. Использовать демо-режим?')) {
-                    this.useDemoMode = true;
-                    this.currentUser = {
-                        login: username,
-                        fullname: username,
-                        role: username === 'admin' ? 'admin' : 'student'
-                    };
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                    this.showUserPanel();
-                } else {
-                    loginError.textContent = 'Неверный логин или пароль';
-                    loginError.style.display = 'block';
-                }
+                loginError.textContent = 'Неверный логин или пароль';
+                loginError.style.display = 'block';
+                this.resetLoginButton();
             }
         } catch (error) {
             console.error('Ошибка авторизации:', error);
-            loginError.textContent = 'Ошибка подключения к серверу. Попробуйте позже.';
+            loginError.textContent = 'Ошибка подключения к серверу';
             loginError.style.display = 'block';
-        } finally {
             this.resetLoginButton();
         }
-    }
-
-    // Авторизация через JSONP
-    loginWithJSONP(username, password) {
-        return new Promise((resolve) => {
-            const script = document.createElement('script');
-            const callbackName = 'login_callback_' + Date.now();
-            
-            window[callbackName] = (data) => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(true);
-            };
-
-            script.src = `https://api.gym42.ru/login/?login=${username}&password=${password}&callback=${callbackName}`;
-            script.onerror = () => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(false);
-            };
-            
-            document.body.appendChild(script);
-            
-            setTimeout(() => {
-                if (window[callbackName]) {
-                    delete window[callbackName];
-                    document.body.removeChild(script);
-                    resolve(false);
-                }
-            }, 5000);
-        });
-    }
-
-    // Получение данных пользователя через JSONP
-    getUserDataWithJSONP() {
-        return new Promise((resolve) => {
-            const script = document.createElement('script');
-            const callbackName = 'userdata_callback_' + Date.now();
-            
-            window[callbackName] = (data) => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(data);
-            };
-
-            script.src = `https://api.gym42.ru/login/?callback=${callbackName}`;
-            script.onerror = () => {
-                delete window[callbackName];
-                document.body.removeChild(script);
-                resolve(null);
-            };
-            
-            document.body.appendChild(script);
-            
-            setTimeout(() => {
-                if (window[callbackName]) {
-                    delete window[callbackName];
-                    document.body.removeChild(script);
-                    resolve(null);
-                }
-            }, 5000);
-        });
     }
 
     // Сброс кнопки входа
@@ -361,13 +270,22 @@ class SurveyApp {
     }
 
     // Выход из системы
-    handleLogout() {
+    async handleLogout() {
         this.currentUser = null;
         localStorage.removeItem('currentUser');
         
-        document.cookie.split(";").forEach(function(c) { 
-            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-        });
+        // Очищаем cookie (на стороне клиента)
+        document.cookie = 'PHPSESSID=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        
+        // Можно также отправить запрос на сервер для завершения сессии
+        try {
+            await fetch('https://api.gym42.ru/login/', {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+        } catch (error) {
+            console.error('Ошибка при выходе:', error);
+        }
         
         this.showScreen('login-screen');
         document.getElementById('user-info').style.display = 'none';
@@ -378,11 +296,14 @@ class SurveyApp {
     // Показать соответствующую панель пользователя
     showUserPanel() {
         document.getElementById('user-name').textContent = this.currentUser.fullname || this.currentUser.login;
-        document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.role === 'admin' ? 'Администратор' : 'Ученик');
+        document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.group === 'Ученики' ? 'Ученик' : this.currentUser.group);
         document.getElementById('user-group').textContent = this.currentUser.group || '';
         document.getElementById('user-info').style.display = 'flex';
         
-        if (this.currentUser.role === 'admin') {
+        // Определяем роль на основе группы
+        const isAdmin = this.currentUser.tarif === 'Администратор' || this.currentUser.group === 'Администраторы';
+        
+        if (isAdmin) {
             this.showScreen('admin-panel');
             this.loadAdminSurveys();
             this.updateStats();
@@ -417,6 +338,7 @@ class SurveyApp {
     setFilter(filter) {
         this.currentFilter = filter;
         
+        // Обновление активной кнопки
         document.querySelectorAll('.filter-btn').forEach(btn => {
             btn.classList.remove('active');
         });
@@ -443,10 +365,12 @@ class SurveyApp {
         document.getElementById('modal-title').textContent = 'Редактировать анкету';
         document.getElementById('survey-modal').style.display = 'block';
         
+        // Заполнение данных анкеты
         document.getElementById('survey-title').value = survey.title;
         document.getElementById('survey-description').value = survey.description || '';
         document.getElementById('survey-status').value = survey.isActive.toString();
         
+        // Очистка и заполнение вопросов
         document.getElementById('questions-container').innerHTML = '';
         survey.questions.forEach((question, index) => {
             this.addQuestion(question);
@@ -485,6 +409,7 @@ class SurveyApp {
                 const optionsContainer = questionCard.querySelector('.options-container');
                 optionsContainer.style.display = 'block';
                 
+                // Устанавливаем настройку исчезающих вариантов
                 if (questionData.disappearingOptions) {
                     optionsContainer.querySelector('.disappearing-options').checked = true;
                 }
@@ -523,6 +448,7 @@ class SurveyApp {
             optionInput.value = value;
         }
         
+        // Показываем статус варианта если включены исчезающие варианты
         const disappearingEnabled = container.querySelector('.disappearing-options').checked;
         if (disappearingEnabled) {
             optionStatus.style.display = 'flex';
@@ -536,6 +462,7 @@ class SurveyApp {
         const optionsContainer = selectElement.closest('.question-card').querySelector('.options-container');
         if (selectElement.value === 'radio' || selectElement.value === 'checkbox') {
             optionsContainer.style.display = 'block';
+            // Добавляем один вариант по умолчанию если их нет
             if (optionsContainer.querySelectorAll('.option-item').length === 0) {
                 this.addOption(optionsContainer);
             }
@@ -544,7 +471,7 @@ class SurveyApp {
         }
     }
 
-    // Сохранение анкеты
+    // Сохранение анкеты (создание или редактирование)
     handleSaveSurvey(e) {
         e.preventDefault();
         
@@ -583,6 +510,7 @@ class SurveyApp {
         });
 
         if (this.editingSurveyId) {
+            // Редактирование существующей анкеты
             const surveyIndex = this.surveys.findIndex(s => s.id === this.editingSurveyId);
             this.surveys[surveyIndex] = {
                 ...this.surveys[surveyIndex],
@@ -592,6 +520,7 @@ class SurveyApp {
                 isActive
             };
         } else {
+            // Создание новой анкеты
             const survey = {
                 id: Date.now(),
                 title: title,
@@ -626,6 +555,7 @@ class SurveyApp {
         
         let adminSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login);
         
+        // Применение фильтра
         if (this.currentFilter === 'active') {
             adminSurveys = adminSurveys.filter(s => s.isActive);
         } else if (this.currentFilter === 'inactive') {
@@ -642,6 +572,7 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = responsesCount;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
+            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (survey.isActive) {
                 statusBadge.classList.add('active');
@@ -678,6 +609,7 @@ class SurveyApp {
             card.querySelector('.responses-count').textContent = this.responses.filter(r => r.surveyId === survey.id).length;
             card.querySelector('.created-date').textContent = new Date(survey.createdAt).toLocaleDateString();
             
+            // Статус анкеты
             const statusBadge = card.querySelector('.survey-status-badge');
             if (hasResponded) {
                 statusBadge.classList.add('inactive');
@@ -687,8 +619,10 @@ class SurveyApp {
                 statusBadge.title = 'Доступна';
             }
             
+            // Убираем dropdown меню для учеников
             card.querySelector('.survey-actions-dropdown').remove();
             
+            // Добавляем кнопку для прохождения анкеты
             if (!hasResponded) {
                 const takeSurveyBtn = document.createElement('button');
                 takeSurveyBtn.className = 'btn-primary';
@@ -729,19 +663,12 @@ class SurveyApp {
         
         navigator.clipboard.writeText(surveyLink).then(() => {
             this.showNotification('Ссылка скопирована в буфер обмена!', 'success');
-        }).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = surveyLink;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            this.showNotification('Ссылка скопирована в буфер обмена!', 'success');
         });
     }
 
     // Показать уведомление
     showNotification(message, type = 'info') {
+        // Создаем элемент уведомления
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.innerHTML = `
@@ -753,6 +680,7 @@ class SurveyApp {
         
         document.body.appendChild(notification);
         
+        // Удаляем уведомление через 3 секунды
         setTimeout(() => {
             notification.style.animation = 'slideOutRight 0.3s ease-in';
             setTimeout(() => {
@@ -859,6 +787,7 @@ class SurveyApp {
         
         resultsHTML += `</tbody></table></div>`;
         
+        // Добавляем скрытую карточку для экспорта
         resultsHTML += `
             <div class="survey-card" data-survey-id="${surveyId}" style="display: none;">
                 ${survey.title}
@@ -900,10 +829,13 @@ class SurveyApp {
     // Экспорт в Excel
     exportToExcel(survey, responses, includeTimestamps, includeQuestions) {
         try {
+            // Создаем рабочую книгу
             const wb = XLSX.utils.book_new();
             
+            // Подготавливаем данные
             const data = [];
             
+            // Заголовок
             const header = ['ФИО ученика'];
             if (includeTimestamps) {
                 header.push('Дата и время прохождения');
@@ -921,6 +853,7 @@ class SurveyApp {
             
             data.push(header);
             
+            // Данные
             responses.forEach(response => {
                 const row = [response.studentName];
                 
@@ -946,16 +879,20 @@ class SurveyApp {
                 data.push(row);
             });
             
+            // Создаем рабочий лист
             const ws = XLSX.utils.aoa_to_sheet(data);
             
+            // Настраиваем ширину колонок
             const colWidths = [];
             header.forEach((_, index) => {
                 colWidths.push({ wch: 20 });
             });
             ws['!cols'] = colWidths;
             
+            // Добавляем лист в книгу
             XLSX.utils.book_append_sheet(wb, ws, 'Результаты анкеты');
             
+            // Создаем лист с информацией об анкете
             const infoData = [
                 ['Информация об анкете'],
                 ['Название:', survey.title],
@@ -989,6 +926,7 @@ class SurveyApp {
             infoWs['!cols'] = [{ wch: 20 }, { wch: 50 }];
             XLSX.utils.book_append_sheet(wb, infoWs, 'Информация');
             
+            // Генерируем файл
             const fileName = `Результаты_${survey.title.replace(/[^\wа-яА-ЯёЁ\s]/gi, '')}_${new Date().toISOString().split('T')[0]}.xlsx`;
             XLSX.writeFile(wb, fileName);
             
@@ -1005,6 +943,7 @@ class SurveyApp {
         try {
             let csv = '';
             
+            // Заголовок
             csv += 'ФИО ученика';
             if (includeTimestamps) {
                 csv += ',Дата и время прохождения';
@@ -1021,6 +960,7 @@ class SurveyApp {
             }
             csv += '\n';
             
+            // Данные
             responses.forEach(response => {
                 csv += `"${response.studentName}"`;
                 
@@ -1046,6 +986,7 @@ class SurveyApp {
                 csv += '\n';
             });
             
+            // Создаем и скачиваем файл
             const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -1102,6 +1043,7 @@ class SurveyApp {
                     <textarea name="question_${question.id}" rows="3" placeholder="Введите ваш ответ..." required></textarea>
                 `;
             } else if (question.type === 'radio' || question.type === 'checkbox') {
+                // Проверяем доступные варианты
                 question.options.forEach(option => {
                     const selectedCount = this.getRemainingSelections(surveyId, question.id, option.text);
                     const isExhausted = question.disappearingOptions && selectedCount >= option.maxSelections;
@@ -1113,7 +1055,7 @@ class SurveyApp {
                     if (question.type === 'radio') {
                         surveyHTML += `
                             <label class="option-label ${disabledClass}">
-                                <input type="radio" name="question_${question.id}" value="${option.text}" ${disabledAttr} ${!isExhausted ? 'required' : ''}>
+                                <input type="radio" name="question_${question.id}" value="${option.text}" ${disabledAttr} required>
                                 <span class="option-text">${option.text}</span>
                                 ${question.disappearingOptions ? `<span class="remaining-badge">Осталось: ${Math.max(0, remaining)}</span>` : ''}
                             </label>
@@ -1149,6 +1091,30 @@ class SurveyApp {
         
         document.getElementById('survey-content').innerHTML = surveyHTML;
         
+        // Добавляем CSS для бейджей
+        const style = document.createElement('style');
+        style.textContent = `
+            .remaining-badge {
+                font-size: 0.75rem;
+                padding: 0.25rem 0.5rem;
+                border-radius: 12px;
+                background: var(--light);
+                color: var(--gray);
+                margin-left: auto;
+            }
+            
+            .option-label.disabled .remaining-badge {
+                background: var(--danger);
+                color: white;
+            }
+            
+            .option-label:not(.disabled) .remaining-badge {
+                background: var(--success);
+                color: white;
+            }
+        `;
+        document.head.appendChild(style);
+        
         document.getElementById('take-survey-form').addEventListener('submit', (e) => this.handleSurveySubmit(e, surveyId));
         this.showScreen('survey-screen');
     }
@@ -1159,20 +1125,6 @@ class SurveyApp {
         const formData = new FormData(e.target);
         const answers = [];
         
-        let hasError = false;
-        
-        this.currentSurvey.questions.forEach(question => {
-            if (question.type === 'radio') {
-                const selectedOption = formData.get(`question_${question.id}`);
-                if (!selectedOption) {
-                    this.showNotification(`Выберите вариант для вопроса "${question.text}"`, 'error');
-                    hasError = true;
-                }
-            }
-        });
-        
-        if (hasError) return;
-        
         this.currentSurvey.questions.forEach(question => {
             if (question.type === 'checkbox') {
                 const selectedOptions = [];
@@ -1180,6 +1132,7 @@ class SurveyApp {
                     selectedOptions.push(checkbox.value);
                 });
                 
+                // Проверяем исчерпание вариантов
                 if (question.disappearingOptions) {
                     const unavailableOptions = [];
                     selectedOptions.forEach(optionText => {
@@ -1192,7 +1145,6 @@ class SurveyApp {
                     
                     if (unavailableOptions.length > 0) {
                         this.showNotification(`Некоторые выбранные варианты уже недоступны: ${unavailableOptions.join(', ')}`, 'error');
-                        hasError = true;
                         return;
                     }
                 }
@@ -1204,12 +1156,12 @@ class SurveyApp {
             } else if (question.type === 'radio') {
                 const selectedOption = formData.get(`question_${question.id}`);
                 if (selectedOption) {
+                    // Проверяем исчерпание варианта
                     if (question.disappearingOptions) {
                         const selectedCount = this.getRemainingSelections(surveyId, question.id, selectedOption);
                         const option = question.options.find(opt => opt.text === selectedOption);
                         if (option && selectedCount >= option.maxSelections) {
                             this.showNotification(`Выбранный вариант "${selectedOption}" уже недоступен`, 'error');
-                            hasError = true;
                             return;
                         }
                     }
@@ -1220,20 +1172,15 @@ class SurveyApp {
                     });
                 }
             } else {
-                const textValue = formData.get(`question_${question.id}`);
-                if (!textValue || !textValue.trim()) {
-                    this.showNotification(`Заполните текстовое поле для вопроса "${question.text}"`, 'error');
-                    hasError = true;
-                    return;
-                }
                 answers.push({
                     questionId: question.id,
-                    value: textValue
+                    value: formData.get(`question_${question.id}`) || ''
                 });
             }
         });
         
-        if (hasError || answers.length !== this.currentSurvey.questions.length) {
+        if (answers.length !== this.currentSurvey.questions.length) {
+            // Не все вопросы были обработаны (возможно, из-за недоступных вариантов)
             return;
         }
         
@@ -1306,14 +1253,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Добавляем обработку сетевых ошибок
 window.addEventListener('offline', () => {
     app.showNotification('Нет подключения к интернету', 'error');
 });
 
 window.addEventListener('online', () => {
     app.showNotification('Подключение восстановлено', 'success');
-});
-
-window.addEventListener('error', (event) => {
-    console.error('Глобальная ошибка:', event.error);
 });
