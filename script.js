@@ -34,7 +34,7 @@ class SurveyApp {
 
         document.getElementById('filter-all').addEventListener('click', () => this.setFilter('all'));
         document.getElementById('filter-active').addEventListener('click', () => this.setFilter('active'));
-       .getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
+        document.getElementById('filter-inactive').addEventListener('click', () => this.setFilter('inactive'));
 
         document.addEventListener('click', (e) => {
             if (e.target.closest('.dropdown-btn')) {
@@ -107,170 +107,58 @@ class SurveyApp {
         }
     }
 
-    async checkAuth() {
-        const hasSession = document.cookie.includes('PHPSESSID');
-        
-        if (hasSession) {
-            this.showScreen('loading-screen');
-            
-            try {
-                const response = await fetch('https://api.gym42.ru/login/', {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (response.ok) {
-                    const userData = await response.json();
-                    this.currentUser = {
-                        login: userData.login,
-                        fullname: userData.fullname,
-                        f: userData.f,
-                        i: userData.i,
-                        o: userData.o,
-                        userid: userData.userid,
-                        group: userData.group,
-                        groupid: userData.groupid,
-                        tarif: userData.tarif,
-                        tarifid: userData.tarifid,
-                        date_begin: userData.date_begin,
-                        date_end: userData.date_end
-                    };
-
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                    this.showUserPanel();
-                } else {
-                    this.showScreen('login-screen');
-                }
-            } catch (error) {
-                console.error(error);
-                this.showScreen('login-screen');
-            }
-        } else {
-            this.showScreen('login-screen');
+    checkAuth() {
+        const savedUser = localStorage.getItem('currentUser');
+        if (savedUser) {
+            this.currentUser = JSON.parse(savedUser);
+            this.showUserPanel();
         }
     }
 
-    async handleLogin(e) {
+    handleLogin(e) {
         e.preventDefault();
         
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
-        const loginButton = document.getElementById('login-button');
-        const loginError = document.getElementById('login-error');
 
-        loginButton.disabled = true;
-        loginButton.innerHTML = `
-            <span>Вход...</span>
-            <div class="spinner"></div>
-        `;
-        loginError.style.display = 'none';
+        const validUsers = {
+            'admin': { password: 'admin123', role: 'admin', name: 'Администратор' },
+            'ivanov.ii': { password: 'password123', role: 'student', name: 'Иванов Иван' },
+            'petrov.ap': { password: 'password123', role: 'student', name: 'Петров Алексей' },
+            'sidorova.mv': { password: 'password123', role: 'student', name: 'Сидорова Мария' },
+            'smirnov.ds': { password: 'password123', role: 'student', name: 'Смирнов Дмитрий' },
+            'kuznetsova.ek': { password: 'password123', role: 'student', name: 'Кузнецова Екатерина' }
+        };
 
-        try {
-            const response = await fetch('https://api.gym42.ru/login/', {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    login: username,
-                    password: password
-                })
-            });
+        if (validUsers[username] && validUsers[username].password === password) {
+            const userData = validUsers[username];
+            this.currentUser = {
+                username: username,
+                role: userData.role,
+                name: userData.name
+            };
 
-            if (response.ok) {
-                const userResponse = await fetch('https://api.gym42.ru/login/', {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (userResponse.ok) {
-                    const userData = await userResponse.json();
-                    
-                    this.currentUser = {
-                        login: userData.login,
-                        fullname: userData.fullname,
-                        f: userData.f,
-                        i: userData.i,
-                        o: userData.o,
-                        userid: userData.userid,
-                        group: userData.group,
-                        groupid: userData.groupid,
-                        tarif: userData.tarif,
-                        tarifid: userData.tarifid,
-                        date_begin: userData.date_begin,
-                        date_end: userData.date_end
-                    };
-
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                    
-                    this.showScreen('loading-screen');
-                    
-                    setTimeout(() => {
-                        this.showUserPanel();
-                    }, 500);
-                } else {
-                    throw new Error();
-                }
-            } else {
-                loginError.textContent = 'Неверный логин или пароль';
-                loginError.style.display = 'block';
-                this.resetLoginButton();
-            }
-        } catch (error) {
-            console.error(error);
-            loginError.textContent = 'Ошибка подключения к серверу';
-            loginError.style.display = 'block';
-            this.resetLoginButton();
+            localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+            this.showUserPanel();
+        } else {
+            this.showNotification('Неверные учетные данные!', 'error');
         }
     }
 
-    resetLoginButton() {
-        const loginButton = document.getElementById('login-button');
-        loginButton.disabled = false;
-        loginButton.innerHTML = `
-            <i class="fas fa-sign-in-alt"></i>
-            <span>Войти в систему</span>
-        `;
-    }
-
-    async handleLogout() {
+    handleLogout() {
         this.currentUser = null;
         localStorage.removeItem('currentUser');
-        
-        document.cookie = 'PHPSESSID=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        
-        try {
-            await fetch('https://api.gym42.ru/login/', {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-        } catch (error) {
-            console.error(error);
-        }
-        
         this.showScreen('login-screen');
         document.getElementById('user-info').style.display = 'none';
         document.getElementById('login-form').reset();
-        this.resetLoginButton();
     }
 
     showUserPanel() {
-        document.getElementById('user-name').textContent = this.currentUser.fullname || this.currentUser.login;
-        document.getElementById('user-role').textContent = this.currentUser.tarif || (this.currentUser.group === 'Ученики' ? 'Ученик' : this.currentUser.group);
-        document.getElementById('user-group').textContent = this.currentUser.group || '';
+        document.getElementById('user-name').textContent = this.currentUser.name;
+        document.getElementById('user-role').textContent = this.currentUser.role === 'admin' ? 'Администратор' : 'Ученик';
         document.getElementById('user-info').style.display = 'flex';
         
-        const isAdmin = this.currentUser.tarif === 'Администратор' || this.currentUser.group === 'Администраторы';
-        
-        if (isAdmin) {
+        if (this.currentUser.role === 'admin') {
             this.showScreen('admin-panel');
             this.loadAdminSurveys();
             this.updateStats();
@@ -288,10 +176,10 @@ class SurveyApp {
     }
 
     updateStats() {
-        const totalSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login).length;
-        const activeSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login && s.isActive).length;
+        const totalSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.username).length;
+        const activeSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.username && s.isActive).length;
         const totalResponses = this.responses.filter(r => 
-            this.surveys.some(s => s.id === r.surveyId && s.createdBy === this.currentUser.login)
+            this.surveys.some(s => s.id === r.surveyId && s.createdBy === this.currentUser.username)
         ).length;
 
         document.getElementById('total-surveys').textContent = totalSurveys;
@@ -475,8 +363,7 @@ class SurveyApp {
                 title: title,
                 description: description,
                 questions: questions,
-                createdBy: this.currentUser.login,
-                createdByFullName: this.currentUser.fullname,
+                createdBy: this.currentUser.username,
                 createdAt: new Date().toISOString(),
                 isActive: isActive,
                 responses: []
@@ -501,7 +388,7 @@ class SurveyApp {
         
         container.innerHTML = '';
         
-        let adminSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.login);
+        let adminSurveys = this.surveys.filter(s => s.createdBy === this.currentUser.username);
         
         if (this.currentFilter === 'active') {
             adminSurveys = adminSurveys.filter(s => s.isActive);
@@ -545,7 +432,7 @@ class SurveyApp {
         availableSurveys.forEach(survey => {
             const card = template.content.cloneNode(true);
             const hasResponded = this.responses.some(r => 
-                r.surveyId === survey.id && r.student === this.currentUser.login
+                r.surveyId === survey.id && r.student === this.currentUser.username
             );
             
             card.querySelector('.survey-title').textContent = survey.title;
@@ -813,13 +700,15 @@ class SurveyApp {
             });
             ws['!cols'] = colWidths;
             
+            if (!ws['!merges']) ws['!merges'] = [];
+            ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } });
+            
             XLSX.utils.book_append_sheet(wb, ws, 'Результаты анкеты');
             
             const infoData = [
                 ['Информация об анкете'],
                 ['Название:', survey.title],
                 ['Описание:', survey.description || 'Не указано'],
-                ['Автор:', survey.createdByFullName || survey.createdBy],
                 ['Дата создания:', new Date(survey.createdAt).toLocaleDateString()],
                 ['Всего ответов:', responses.length],
                 [''],
@@ -854,7 +743,7 @@ class SurveyApp {
             this.showNotification('Результаты успешно экспортированы в Excel!', 'success');
             
         } catch (error) {
-            console.error(error);
+            console.error('Ошибка при экспорте в Excel:', error);
             this.showNotification('Ошибка при экспорте в Excel', 'error');
         }
     }
@@ -917,7 +806,7 @@ class SurveyApp {
             this.showNotification('Результаты успешно экспортированы в CSV!', 'success');
             
         } catch (error) {
-            console.error(error);
+            console.error('Ошибка при экспорте в CSV:', error);
             this.showNotification('Ошибка при экспорте в CSV', 'error');
         }
     }
@@ -1005,29 +894,6 @@ class SurveyApp {
         
         document.getElementById('survey-content').innerHTML = surveyHTML;
         
-        const style = document.createElement('style');
-        style.textContent = `
-            .remaining-badge {
-                font-size: 0.75rem;
-                padding: 0.25rem 0.5rem;
-                border-radius: 12px;
-                background: var(--light);
-                color: var(--gray);
-                margin-left: auto;
-            }
-            
-            .option-label.disabled .remaining-badge {
-                background: var(--danger);
-                color: white;
-            }
-            
-            .option-label:not(.disabled) .remaining-badge {
-                background: var(--success);
-                color: white;
-            }
-        `;
-        document.head.appendChild(style);
-        
         document.getElementById('take-survey-form').addEventListener('submit', (e) => this.handleSurveySubmit(e, surveyId));
         this.showScreen('survey-screen');
     }
@@ -1096,8 +962,8 @@ class SurveyApp {
         const response = {
             id: Date.now(),
             surveyId: surveyId,
-            student: this.currentUser.login,
-            studentName: this.currentUser.fullname,
+            student: this.currentUser.username,
+            studentName: this.currentUser.name,
             answers: answers,
             submittedAt: new Date().toISOString()
         };
@@ -1148,7 +1014,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const survey = app.surveys.find(s => s.id === parseInt(surveyId));
         if (survey && survey.isActive) {
             const hasResponded = app.responses.some(r => 
-                r.surveyId === survey.id && r.student === app.currentUser.login
+                r.surveyId === survey.id && r.student === app.currentUser.username
             );
             
             if (!hasResponded) {
@@ -1156,12 +1022,4 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
-});
-
-window.addEventListener('offline', () => {
-    app.showNotification('Нет подключения к интернету', 'error');
-});
-
-window.addEventListener('online', () => {
-    app.showNotification('Подключение восстановлено', 'success');
 });
