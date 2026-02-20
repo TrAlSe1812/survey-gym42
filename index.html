@@ -26,7 +26,6 @@
                         <div class="user-details">
                             <span id="user-name" class="user-name"></span>
                             <span id="user-role" class="user-role"></span>
-                            <span id="user-group" class="user-group"></span>
                         </div>
                         <button id="logout-btn" class="btn-logout">
                             <i class="fas fa-sign-out-alt"></i>
@@ -46,38 +45,50 @@
                                 <i class="fas fa-chart-bar"></i>
                             </div>
                             <h2>Система анкетирования</h2>
-                            <p>Авторизация через систему сетевых дисков</p>
+                            <p>Вход в систему</p>
                         </div>
                         <form id="login-form" class="login-form">
                             <div class="input-group">
                                 <i class="fas fa-user input-icon"></i>
-                                <input type="text" id="username" placeholder="Введите ваш логин" required>
+                                <input type="text" id="username" placeholder="Логин" required>
                             </div>
                             <div class="input-group">
                                 <i class="fas fa-lock input-icon"></i>
-                                <input type="password" id="password" placeholder="Введите ваш пароль" required>
+                                <input type="password" id="password" placeholder="Пароль" required>
                             </div>
-                            <button type="submit" class="btn-login" id="login-button">
+                            <button type="submit" class="btn-login">
                                 <i class="fas fa-sign-in-alt"></i>
-                                <span>Войти в систему</span>
+                                Войти
                             </button>
-                            <div id="login-error" class="login-error" style="display: none;"></div>
                         </form>
-                        <div class="system-info">
-                            <p><i class="fas fa-info-circle"></i> Для входа используйте учетные данные системы сетевых дисков</p>
-                            <p class="api-info"><i class="fas fa-cloud"></i> Подключение к api.gym42.ru</p>
+                        <div class="demo-accounts">
+                            <h4><i class="fas fa-vial"></i> Тестовые аккаунты:</h4>
+                            <div class="demo-account admin">
+                                <span class="role-badge admin">Админ</span>
+                                <code>admin / admin123</code>
+                            </div>
+                            <div class="demo-account student">
+                                <span class="role-badge student">Ученик</span>
+                                <code>ivanov.ii / password123</code>
+                            </div>
+                            <div class="demo-account student">
+                                <span class="role-badge student">Ученик</span>
+                                <code>petrov.ap / password123</code>
+                            </div>
+                            <div class="demo-account student">
+                                <span class="role-badge student">Ученик</span>
+                                <code>sidorova.mv / password123</code>
+                            </div>
+                            <div class="demo-account student">
+                                <span class="role-badge student">Ученик</span>
+                                <code>smirnov.ds / password123</code>
+                            </div>
+                            <div class="demo-account student">
+                                <span class="role-badge student">Ученик</span>
+                                <code>kuznetsova.ek / password123</code>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Экран загрузки -->
-        <div id="loading-screen" class="screen">
-            <div class="container">
-                <div class="loading-container">
-                    <div class="loading-spinner"></div>
-                    <p>Загрузка данных...</p>
                 </div>
             </div>
         </div>
